@@ -1,7 +1,5 @@
 # Map3d
 
-**Developer: Mursisru**
-
 [![Nuclear Option](https://img.shields.io/badge/Game-Nuclear%20Option-blue)](https://store.steampowered.com/app/2168680/Nuclear_Option/)
 [![BepInEx 5](https://img.shields.io/badge/Loader-BepInEx%205-orange)](https://docs.bepinex.dev/)
 [![Version](https://img.shields.io/badge/Version-0.1.0-green)](https://github.com/Mursisru/Map3d)
@@ -93,7 +91,3 @@ See [CHANGELOG.md](CHANGELOG.md).
 ## Licence
 
 MIT — see [LICENSE](LICENSE).
-
----
-
-Keywords: `nuclear-option`, `bepinex`, `minimap`, `dynamicmap`, `harmony`, `unity`, `mod`
