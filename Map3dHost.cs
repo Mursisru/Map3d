@@ -3,6 +3,7 @@ using System.Collections;
 using System.Reflection;
 using BepInEx.Logging;
 using HarmonyLib;
+using Map3d.Engine;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -46,6 +47,7 @@ namespace Map3d
                     _ready = false;
                     _scheduled = false;
                 }
+                HeightMapCache.Instance.Invalidate();
                 return;
             }
             if (!_ready)
@@ -82,6 +84,7 @@ namespace Map3d
             _log?.LogInfo($"Map3d patches={n}");
             _ctrl = gameObject.AddComponent<Map3dController>();
             _ctrl.Activate();
+            HeightMapCache.Instance.EnsureBaking();
             _log?.LogInfo($"Map3d tilt engine v{AppVersion.DisplayVersion} ready ({path})");
         }
 
@@ -93,6 +96,7 @@ namespace Map3d
                 Destroy(_ctrl);
                 _ctrl = null;
             }
+            HeightMapCache.Instance.Invalidate();
         }
 
         private static bool IsMenu(string path)

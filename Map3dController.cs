@@ -38,6 +38,13 @@ namespace Map3d
 
         private void LateUpdate()
         {
+            if (_active && Map3dConfig.IsEnabled)
+            {
+                HeightMapCache cache = HeightMapCache.Instance;
+                cache.EnsureBaking();
+                cache.TickBake();
+            }
+
             if (!_active || !Map3dConfig.IsEnabled)
             {
                 _slot?.Hide();

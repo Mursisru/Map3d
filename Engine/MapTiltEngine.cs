@@ -7,12 +7,13 @@ using UnityEngine.UI;
 namespace Map3d.Engine
 {
     /// <summary>
-    /// Tilts stock MapImage cloth; unit icons + view cone on the same pivot (Layer 31).
-    /// Geography UVs are heading-aligned so position matches the real world / stock map.
+    /// Tilts stock MapImage cloth with optional terrain height displacement from HeightMapCache.
+    /// Geography UVs are heading-aligned; icons/cone share the cloth pivot.
     /// </summary>
     internal sealed class MapTiltEngine : IDisposable
     {
         internal const int Layer = 31;
+        private const float IconLiftMeters = 4f;
 
         private GameObject? _root;
         private Transform? _yaw;
@@ -25,14 +26,23 @@ namespace Map3d.Engine
         private Mesh? _mesh;
         private Material? _mat;
         private ClothIconLayer? _icons;
+        private Vector3[] _verts = Array.Empty<Vector3>();
+        private Vector2[] _uvs = Array.Empty<Vector2>();
+        private int[] _tris = Array.Empty<int>();
+        private int _meshRes;
         private int _rtSize;
         private float _radius;
         private float _lookAhead;
+        private float _clothNear;
+        private float _clothFar;
+        private float _clothHalfW;
+        private float _heightScaleMeters;
         private Vector2 _mapSize;
         private Vector4 _uvRect;
         private bool _built;
 
         internal RenderTexture? Output => _rt;
+        internal float HeightScaleMeters => _heightScaleMeters;
 
         internal static MapTiltEngine Create()
         {
@@ -67,8 +77,7 @@ namespace Map3d.Engine
 
             _filter = _canvas.gameObject.AddComponent<MeshFilter>();
             _renderer = _canvas.gameObject.AddComponent<MeshRenderer>();
-            _mesh = CreateFlatQuad();
-            _filter.sharedMesh = _mesh;
+            EnsureGridMesh(Map3dConfig.HeightClothResolution.Value);
             _mat = CreateMapMaterial();
             _renderer.sharedMaterial = _mat;
             _renderer.shadowCastingMode = ShadowCastingMode.Off;
@@ -86,7 +95,6 @@ namespace Map3d.Engine
             _built = true;
         }
 
-        /// <summary>Render tilted stock map cloth for own aircraft pose (CombatHUD.aircraft).</summary>
         internal bool Tick(Aircraft? ownAircraft)
         {
             if (!_built || _cam == null || _tilt == null || _yaw == null || _canvas == null || _mesh == null)
@@ -110,11 +118,18 @@ namespace Map3d.Engine
             else
                 forward.Normalize();
 
+            Vector3 right = Vector3.Cross(Vector3.up, forward);
+            if (right.sqrMagnitude < 0.0001f)
+                right = Vector3.right;
+            else
+                right.Normalize();
+
             float aircraftYaw = ownAircraft.transform.eulerAngles.y;
 
             _radius = StockMapMetrics.ResolveRadius(map);
             _lookAhead = Mathf.Max(0f, Map3dConfig.LookAheadMeters.Value);
             _mapSize = mapSize;
+            ResolveClothExtents();
             ResolveUvRect(sprite, out Texture? tex, out _uvRect);
             if (tex == null)
                 return false;
@@ -123,23 +138,50 @@ namespace Map3d.Engine
             _cam.targetTexture = _rt;
             _cam.backgroundColor = Color.black;
 
-            // Heading-up like stock: +Z = aircraft forward.
             _yaw.rotation = Quaternion.LookRotation(forward, Vector3.up);
 
-            float size = _radius * 2f;
-            // Stock look-ahead: cloth center ahead of aircraft; aircraft at pivot (0).
-            _canvas.localPosition = new Vector3(0f, 0f, _lookAhead);
+            float width = _clothHalfW * 2f;
+            float depth = Mathf.Max(1f, _clothFar - _clothNear);
+            _canvas.localPosition = new Vector3(0f, 0f, (_clothNear + _clothFar) * 0.5f);
             _canvas.localRotation = Quaternion.identity;
-            _canvas.localScale = new Vector3(size, 1f, size);
+            _canvas.localScale = new Vector3(width, 1f, depth);
 
-            ApplyHeadingAlignedUvs(tex, tint, aircraft, forward);
+            HeightMapCache cache = HeightMapCache.Instance;
+            bool heightOn = Map3dConfig.HeightEnabled.Value && cache.IsReady;
+            int res = Mathf.Clamp(Map3dConfig.HeightClothResolution.Value, 8, 96);
+            EnsureGridMesh(heightOn ? res : 2);
+
+            ApplyMaterial(tex, tint);
+
+            if (heightOn)
+            {
+                _heightScaleMeters = cache.ResolveHeightScaleMeters(_radius);
+                ApplyDisplacedMesh(aircraft, forward, right, cache);
+            }
+            else
+            {
+                _heightScaleMeters = 0f;
+                ApplyFlatUvs(aircraft, forward, right);
+            }
 
             float tilt = Mathf.Clamp(Map3dConfig.TiltDegrees.Value, 0f, 80f);
             _tilt.localRotation = Quaternion.Euler(tilt, 0f, 0f);
             _tilt.localPosition = Vector3.zero;
 
-            FrameClothCamera();
-            _icons?.Sync(map, ownAircraft, aircraft, forward, aircraftYaw, _radius, _cam);
+            FrameClothCamera(cache);
+            _icons?.Sync(
+                map,
+                ownAircraft,
+                aircraft,
+                forward,
+                aircraftYaw,
+                _radius,
+                _clothFar,
+                _clothHalfW,
+                _cam,
+                cache,
+                _heightScaleMeters,
+                IconLiftMeters);
 
             _cam.enabled = true;
             return true;
@@ -151,43 +193,91 @@ namespace Map3d.Engine
                 _cam.enabled = on;
         }
 
-        /// <summary>
-        /// UV each cloth corner from its real world XZ (heading-aligned window).
-        /// Fixes "not at airport" caused by axis-aligned UV on a rotated cloth.
-        /// </summary>
-        private void ApplyHeadingAlignedUvs(Texture tex, Color tint, Vector3 aircraft, Vector3 forward)
+        private void ApplyMaterial(Texture tex, Color tint)
         {
-            if (_mat == null || _mesh == null)
+            if (_mat == null)
                 return;
-
             _mat.mainTexture = tex;
             _mat.SetTexture("_MainTex", tex);
             _mat.color = tint;
             if (_mat.HasProperty("_Color"))
                 _mat.SetColor("_Color", tint);
+        }
 
-            Vector3 right = Vector3.Cross(Vector3.up, forward);
-            if (right.sqrMagnitude < 0.0001f)
-                right = Vector3.right;
-            else
-                right.Normalize();
+        private void ResolveClothExtents()
+        {
+            float r = Mathf.Max(500f, _radius);
+            float farScale = Mathf.Clamp(Map3dConfig.HorizonFarScale.Value, 1f, 12f);
+            float nearScale = Mathf.Clamp(Map3dConfig.HorizonNearScale.Value, 0.1f, 4f);
+            float sideScale = Mathf.Clamp(Map3dConfig.HorizonSideScale.Value, 0.5f, 4f);
+            float mapCap = Mathf.Max(r * 2f, Mathf.Min(_mapSize.x, _mapSize.y) * 0.48f);
+            _clothFar = Mathf.Min(r * farScale, mapCap);
+            _clothNear = -r * nearScale;
+            _clothHalfW = r * sideScale;
+        }
 
-            // Canvas local: center at aircraft+forward*lookAhead, extents ±radius on right/forward.
-            Vector3 center = aircraft + forward * _lookAhead;
-            // Quad verts order: (-0.5,-0.5), (+0.5,-0.5), (-0.5,+0.5), (+0.5,+0.5) in (x,z)
-            Vector3[] corners =
+        private Vector3 ClothWorld(Vector3 aircraft, Vector3 forward, Vector3 right, float u, float v)
+        {
+            float x = (u - 0.5f) * 2f * _clothHalfW;
+            float z = Mathf.Lerp(_clothNear, _clothFar, v);
+            return aircraft + right * x + forward * z;
+        }
+
+        private void ApplyFlatUvs(Vector3 aircraft, Vector3 forward, Vector3 right)
+        {
+            if (_mesh == null || _uvs.Length < 4)
+                return;
+
+            _uvs[0] = WorldToMapUv(ClothWorld(aircraft, forward, right, 0f, 0f));
+            _uvs[1] = WorldToMapUv(ClothWorld(aircraft, forward, right, 1f, 0f));
+            _uvs[2] = WorldToMapUv(ClothWorld(aircraft, forward, right, 0f, 1f));
+            _uvs[3] = WorldToMapUv(ClothWorld(aircraft, forward, right, 1f, 1f));
+            _verts[0] = new Vector3(-0.5f, 0f, -0.5f);
+            _verts[1] = new Vector3( 0.5f, 0f, -0.5f);
+            _verts[2] = new Vector3(-0.5f, 0f,  0.5f);
+            _verts[3] = new Vector3( 0.5f, 0f,  0.5f);
+            _mesh.vertices = _verts;
+            _mesh.uv = _uvs;
+            _mesh.RecalculateNormals();
+            _mesh.RecalculateBounds();
+        }
+
+        private void ApplyDisplacedMesh(
+            Vector3 aircraft,
+            Vector3 forward,
+            Vector3 right,
+            HeightMapCache cache)
+        {
+            if (_mesh == null || _meshRes < 2)
+                return;
+
+            int n = _meshRes;
+            float step = 1f / (n - 1);
+            float sea = cache.SeaY;
+            float scale = _heightScaleMeters;
+
+            for (int iz = 0; iz < n; iz++)
             {
-                center + right * (-_radius) + forward * (-_radius),
-                center + right * ( _radius) + forward * (-_radius),
-                center + right * (-_radius) + forward * ( _radius),
-                center + right * ( _radius) + forward * ( _radius)
-            };
+                float v = iz * step;
+                for (int ix = 0; ix < n; ix++)
+                {
+                    float u = ix * step;
+                    int idx = iz * n + ix;
+                    Vector3 world = ClothWorld(aircraft, forward, right, u, v);
+                    _uvs[idx] = WorldToMapUv(world);
 
-            var uvs = new Vector2[4];
-            for (int i = 0; i < 4; i++)
-                uvs[i] = WorldToMapUv(corners[i]);
+                    float h = sea;
+                    if (!cache.TrySampleWorld(world, out h))
+                        h = sea;
+                    float yLocal = (h - sea) * scale;
+                    _verts[idx] = new Vector3(u - 0.5f, yLocal, v - 0.5f);
+                }
+            }
 
-            _mesh.uv = uvs;
+            _mesh.vertices = _verts;
+            _mesh.uv = _uvs;
+            _mesh.RecalculateNormals();
+            _mesh.RecalculateBounds();
         }
 
         private Vector2 WorldToMapUv(Vector3 worldLocal)
@@ -200,17 +290,90 @@ namespace Map3d.Engine
             return new Vector2(_uvRect.x + u01 * _uvRect.z, _uvRect.y + v01 * _uvRect.w);
         }
 
-        private void FrameClothCamera()
+        private void EnsureGridMesh(int resolution)
+        {
+            resolution = Mathf.Clamp(resolution, 2, 96);
+            if (_mesh != null && _meshRes == resolution && _verts.Length == resolution * resolution)
+            {
+                if (_filter != null && _filter.sharedMesh != _mesh)
+                    _filter.sharedMesh = _mesh;
+                return;
+            }
+
+            _meshRes = resolution;
+            int n = resolution;
+            int vertCount = n * n;
+            _verts = new Vector3[vertCount];
+            _uvs = new Vector2[vertCount];
+            int quadCount = (n - 1) * (n - 1);
+            _tris = new int[quadCount * 6];
+
+            float step = n > 1 ? 1f / (n - 1) : 0f;
+            for (int iz = 0; iz < n; iz++)
+            {
+                float v = iz * step;
+                for (int ix = 0; ix < n; ix++)
+                {
+                    float u = ix * step;
+                    int idx = iz * n + ix;
+                    _verts[idx] = new Vector3(u - 0.5f, 0f, v - 0.5f);
+                    _uvs[idx] = new Vector2(u, v);
+                }
+            }
+
+            int t = 0;
+            for (int iz = 0; iz < n - 1; iz++)
+            {
+                for (int ix = 0; ix < n - 1; ix++)
+                {
+                    int i0 = iz * n + ix;
+                    int i1 = i0 + 1;
+                    int i2 = i0 + n;
+                    int i3 = i2 + 1;
+                    _tris[t++] = i0;
+                    _tris[t++] = i2;
+                    _tris[t++] = i1;
+                    _tris[t++] = i1;
+                    _tris[t++] = i2;
+                    _tris[t++] = i3;
+                }
+            }
+
+            if (_mesh != null)
+                UnityEngine.Object.Destroy(_mesh);
+
+            _mesh = new Mesh
+            {
+                name = "Map3d.ClothGrid",
+                indexFormat = vertCount > 65000
+                    ? UnityEngine.Rendering.IndexFormat.UInt32
+                    : UnityEngine.Rendering.IndexFormat.UInt16
+            };
+            _mesh.vertices = _verts;
+            _mesh.uv = _uvs;
+            _mesh.triangles = _tris;
+            _mesh.RecalculateNormals();
+            _mesh.RecalculateBounds();
+            if (_filter != null)
+                _filter.sharedMesh = _mesh;
+        }
+
+        private void FrameClothCamera(HeightMapCache cache)
         {
             float r = _radius;
-            // No Min(0.8) floor — that kept the camera unnaturally far from stock.
             float height = r * Mathf.Clamp(Map3dConfig.ViewHeightScale.Value, 0.35f, 3f);
             float back = r * Mathf.Clamp(Map3dConfig.ViewBackScale.Value, 0f, 0.5f);
-            float look = r * Mathf.Clamp(Map3dConfig.ViewLookScale.Value, 0f, 1f);
+            float lookFrac = Mathf.Clamp(Map3dConfig.ViewLookScale.Value, 0f, 1f);
+            float look = Mathf.Lerp(0f, Mathf.Max(_lookAhead, _clothFar * 0.55f), lookFrac + 0.35f);
+            look = Mathf.Clamp(look, r * 0.15f, _clothFar * 0.85f);
 
             Vector3 pivot = _tilt!.position;
             Vector3 forward = _yaw!.forward;
             Vector3 up = _yaw.up;
+
+            float relief = Mathf.Max(0f, _heightScaleMeters)
+                * Mathf.Max(0f, cache.MaxY - cache.SeaY);
+            height += relief * 0.35f;
 
             Vector3 camPos = pivot - forward * back + up * height;
             Vector3 lookAt = _tilt.TransformPoint(new Vector3(0f, 0f, look));
@@ -218,9 +381,10 @@ namespace Map3d.Engine
             _cam!.transform.SetParent(_root!.transform, true);
             _cam.transform.position = camPos;
             _cam.transform.rotation = Quaternion.LookRotation(lookAt - camPos, forward);
+            _cam.orthographic = false;
             _cam.fieldOfView = Mathf.Clamp(Map3dConfig.ViewFov.Value, 20f, 75f);
             _cam.nearClipPlane = Mathf.Max(1f, height * 0.02f);
-            _cam.farClipPlane = Mathf.Max(50000f, r * 8f);
+            _cam.farClipPlane = Mathf.Max(80000f, _clothFar * 4f, r * 12f);
         }
 
         private static bool TryResolveStock(DynamicMap map, out Sprite? sprite, out Color tint, out Vector2 mapSize)
@@ -264,29 +428,6 @@ namespace Map3d.Engine
             float tw = Mathf.Max(1f, tex.width);
             float th = Mathf.Max(1f, tex.height);
             rect = new Vector4(tr.x / tw, tr.y / th, tr.width / tw, tr.height / th);
-        }
-
-        private static Mesh CreateFlatQuad()
-        {
-            var mesh = new Mesh { name = "Map3d.Cloth" };
-            mesh.vertices = new[]
-            {
-                new Vector3(-0.5f, 0f, -0.5f),
-                new Vector3( 0.5f, 0f, -0.5f),
-                new Vector3(-0.5f, 0f,  0.5f),
-                new Vector3( 0.5f, 0f,  0.5f)
-            };
-            mesh.uv = new[]
-            {
-                new Vector2(0f, 0f),
-                new Vector2(1f, 0f),
-                new Vector2(0f, 1f),
-                new Vector2(1f, 1f)
-            };
-            mesh.triangles = new[] { 0, 2, 1, 1, 2, 3 };
-            mesh.normals = new[] { Vector3.up, Vector3.up, Vector3.up, Vector3.up };
-            mesh.RecalculateBounds();
-            return mesh;
         }
 
         private static Material CreateMapMaterial()

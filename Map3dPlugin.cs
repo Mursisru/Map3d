@@ -20,7 +20,7 @@ namespace Map3d
                 return;
             }
             Map3dHost.Ensure(Logger);
-            Logger.LogInfo($"{PluginName} {AppVersion.DisplayVersion} loaded (tilt-only, no extrusion).");
+            Logger.LogInfo($"{PluginName} {AppVersion.DisplayVersion} loaded (tilt + terrain relief).");
         }
     }
 }

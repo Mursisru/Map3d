@@ -41,6 +41,10 @@
       <HintPath>$(NuclearOptionRoot)\NuclearOption_Data\Managed\UnityEngine.UIModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>$(NuclearOptionRoot)\NuclearOption_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
   </ItemGroup>
   <Target Name="DeployToGame" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
     <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFolder="$(NuclearOptionRoot)\BepInEx\plugins" SkipUnchangedFiles="false" Condition="Exists('$(OutputPath)$(AssemblyName).dll')" />

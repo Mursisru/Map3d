@@ -1,11 +1,13 @@
 # Map3d
 
+**Developer: Mursisru**
+
 [![Nuclear Option](https://img.shields.io/badge/Game-Nuclear%20Option-blue)](https://store.steampowered.com/app/2168680/Nuclear_Option/)
 [![BepInEx 5](https://img.shields.io/badge/Loader-BepInEx%205-orange)](https://docs.bepinex.dev/)
-[![Version](https://img.shields.io/badge/Version-0.1.0-green)](https://github.com/Mursisru/Map3d)
+[![Version](https://img.shields.io/badge/Version-0.2.0-green)](https://github.com/Mursisru/Map3d)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
-BepInEx 5 plugin for **Nuclear Option** that tilts the stock minimized `DynamicMap` into a 3D cloth view (no height extrusion). Unit icons and the view cone render on the same tilted layer as the map substrate.
+BepInEx 5 plugin for **Nuclear Option** that tilts the stock minimized `DynamicMap` into a 3D cloth view with terrain height relief. Unit icons and the view cone render on the same tilted layer as the map substrate.
 
 **Plugin GUID:** `com.at747.map3d`
 
@@ -20,16 +22,18 @@ BepInEx 5 plugin for **Nuclear Option** that tilts the stock minimized `DynamicM
 > **Maximize stays vanilla 2D.** Only the minimized cockpit map is replaced with the tilted RenderTexture view.
 
 > [!WARNING]
-> After rebuilding or updating, delete `BepInEx\config\com.at747.map3d.cfg` if old camera/icon defaults stick around.
+> After rebuilding or updating, delete `BepInEx\config\com.at747.map3d.cfg` if old camera/icon/height defaults stick around.
 
 > [!TIP]
-> Use [Configuration Manager](https://github.com/BepInEx/BepInEx.ConfigurationManager) to tweak tilt, zoom, icon size, and cone scale in-game.
+> Use [Configuration Manager](https://github.com/BepInEx/BepInEx.ConfigurationManager) to tweak tilt, zoom, height relief, icon size, and cone scale in-game.
 
 ---
 
 ## Features
 
 * **Tilted stock MapImage** — heading-up UV window (look-ahead 4000 m like `CenterMinimizedMap`), default tilt **55°**, black clear.
+* **Terrain height relief** — full-map height cache baked on mission load; cloth and icons displaced from cache.
+* **Horizon fill** — cloth extends ahead past the visual horizon (`HorizonFarScale`).
 * **Same-layer icons** — unit sprites on the cloth pivot; stock flat `iconLayer` / `viewIndicator` hidden while 3D is active.
 * **World heading on billboards** — aircraft icons face real `unit.forward` (not locked to your nose); still billboard toward the map camera.
 * **Stock-sized view cone** — length from stock `viewIndicator` rect / `mapDisplayFactor`; tip pivot matched to vanilla `(0.5, 0.05)`.
@@ -67,6 +71,10 @@ Config file: `BepInEx\config\com.at747.map3d.cfg`
 | `TiltDegrees` | 55 | Cloth pitch toward the player |
 | `UseStockZoom` | true | Radius from stock minimap scale |
 | `LookAheadMeters` | 4000 | Same as stock `CenterMinimizedMap` |
+| `HorizonFarScale` | 4.5 | Cloth extent ahead / radius |
+| `Height.Enabled` | true | Displace cloth from height cache |
+| `Height.CacheResolution` | 256 | Full-map bake resolution |
+| `Height.VisualFraction` | 0.28 | Relief vertical span / radius |
 | `IconSizeFraction` | 0.05 | Icon world size / radius |
 | `ConeLengthScale` | 1 | Multiplier on stock view-cone meters |
 
@@ -91,3 +99,7 @@ See [CHANGELOG.md](CHANGELOG.md).
 ## Licence
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+Keywords: `nuclear-option`, `bepinex`, `minimap`, `dynamicmap`, `harmony`, `unity`, `mod`

@@ -52,7 +52,12 @@ namespace Map3d.Engine
             Vector3 forward,
             float aircraftYaw,
             float radius,
-            Camera? clothCam)
+            float clothFarMeters,
+            float clothHalfWidth,
+            Camera? clothCam,
+            HeightMapCache? heights,
+            float heightScaleMeters,
+            float iconLiftMeters)
         {
             if (map?.mapIcons == null)
             {
@@ -69,9 +74,11 @@ namespace Map3d.Engine
             float optionScale = SceneSingleton<MapOptions>.i != null
                 ? Mathf.Max(0.25f, SceneSingleton<MapOptions>.i.iconSize)
                 : 1f;
-            float cull = radius + Mathf.Max(0f, Map3dConfig.LookAheadMeters.Value);
+            float cullFar = Mathf.Max(radius, clothFarMeters, clothHalfWidth);
+            float cull = cullFar + 500f;
+            float lift = Mathf.Max(1f, iconLiftMeters);
 
-            SyncViewCone(map, aircraftPos, right, forward, radius);
+            SyncViewCone(map, aircraftPos, right, forward, radius, heights, heightScaleMeters, lift);
 
             int used = 0;
             for (int i = 0; i < map.mapIcons.Count; i++)
@@ -110,8 +117,6 @@ namespace Map3d.Engine
                 if (isOwn)
                     scale *= 1.1f;
 
-                // World heading for mapOrient (and all Aircraft): billboard UP = unit.forward.
-                // Do NOT use cam.up+twist — that locked icons to the player's nose when twist failed.
                 bool orient = ShouldOrientIcon(unit);
                 Vector3 headingUp = clothCam != null ? clothCam.transform.up : Vector3.up;
                 if (orient)
@@ -122,11 +127,15 @@ namespace Map3d.Engine
                         headingUp = uf.normalized;
                 }
 
+                float y = ClothSurfaceY(heights, heightScaleMeters, world, lift);
+                if (isOwn)
+                    y += 1f;
+
                 Slot slot = Get(used);
                 slot.Show(
                     sprite,
                     color,
-                    new Vector3(x, isOwn ? 4f : 3f, z),
+                    new Vector3(x, y, z),
                     scale,
                     headingUp,
                     isOwn,
@@ -143,7 +152,10 @@ namespace Map3d.Engine
             Vector3 aircraftPos,
             Vector3 right,
             Vector3 forward,
-            float radius)
+            float radius,
+            HeightMapCache? heights,
+            float heightScaleMeters,
+            float lift)
         {
             if (_cone == null || _coneSr == null)
                 return;
@@ -158,7 +170,6 @@ namespace Map3d.Engine
 
             Sprite? coneSprite = null;
             Color coneColor = new Color(1f, 1f, 1f, 0.07f);
-            // Stock viewIndicator RectTransform pivot is (0.5, 0.05) — tip near bottom of sprite.
             Vector2 tipNorm = new Vector2(0.5f, 0.05f);
             if (map.viewIndicator != null)
             {
@@ -181,7 +192,6 @@ namespace Map3d.Engine
                 return;
             }
 
-            // Aim along camera look on cloth (+Z = aircraft forward).
             Vector3 look = camTx.forward;
             look.y = 0f;
             if (look.sqrMagnitude < 1e-6f)
@@ -195,8 +205,6 @@ namespace Map3d.Engine
                 look.Normalize();
 
             float ang = Mathf.Atan2(Vector3.Dot(look, right), Vector3.Dot(look, forward)) * Mathf.Rad2Deg;
-            // Stock FOV art: tip at bottom (-Y), fan opens +Y. Flat maps +Y→+Z so opening already
-            // faces cloth forward — only aim with -ang (no +180, that pointed the cone backward).
             Quaternion aim = FlatOnCloth * Quaternion.Euler(0f, 0f, -ang);
 
             float coneLen = StockMapMetrics.ResolveConeMeters(map, radius);
@@ -205,14 +213,27 @@ namespace Map3d.Engine
             _coneSr.sortingOrder = 8;
             ApplySpriteScale(_coneSr, coneSprite, coneLen);
 
-            // Put stock tip-pivot on the aircraft (cloth origin), not sprite center.
             Vector3 tipSprite = TipOffsetFromPivot(coneSprite, tipNorm);
             float s = _cone.localScale.x;
             Vector3 tipInCone = aim * (tipSprite * s);
 
+            float y = ClothSurfaceY(heights, heightScaleMeters, aircraftPos, lift);
             _cone.gameObject.SetActive(true);
             _cone.localRotation = aim;
-            _cone.localPosition = new Vector3(0f, 2.5f, 0f) - tipInCone;
+            _cone.localPosition = new Vector3(0f, y, 0f) - tipInCone;
+        }
+
+        private static float ClothSurfaceY(
+            HeightMapCache? heights,
+            float heightScaleMeters,
+            Vector3 world,
+            float lift)
+        {
+            if (heights == null || heightScaleMeters <= 0.0001f || !Map3dConfig.HeightEnabled.Value)
+                return lift;
+            if (!heights.IsReady || !heights.TrySampleWorld(world, out float h))
+                return lift;
+            return (h - heights.SeaY) * heightScaleMeters + lift;
         }
 
         /// <summary>Stock mapOrient, or any Aircraft — always show real world heading.</summary>
