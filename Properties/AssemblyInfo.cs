@@ -1,0 +1,10 @@
+using System.Reflection;
+using System.Runtime.InteropServices;
+
+[assembly: AssemblyTitle("Map3d")]
+[assembly: AssemblyDescription("Tilt stock DynamicMap minimap 55°; icons and cone on the same cloth layer")]
+[assembly: ComVisible(false)]
+[assembly: Guid("c3d4e5f6-a7b8-9012-cdef-123456789012")]
+[assembly: AssemblyVersion("0.1.0.0")]
+[assembly: AssemblyFileVersion("0.1.0.0")]
+[assembly: AssemblyInformationalVersion("0.1.0")]

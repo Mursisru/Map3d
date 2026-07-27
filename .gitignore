@@ -1,0 +1,11 @@
+bin/
+obj/
+.vs/
+*.user
+Directory.Build.props
+.cursorrules
+.cursor/
+*.dll
+*.pdb
+*.log
+.idea/
