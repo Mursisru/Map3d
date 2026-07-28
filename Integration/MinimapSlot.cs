@@ -14,12 +14,14 @@ namespace Map3d.Integration
         private Image? _mapImage;
         private GameObject? _iconLayer;
         private GameObject? _viewIndicator;
+        private GameObject? _gridLabels;
         private DynamicMap? _map;
         private bool _bound;
         private bool _applied;
         private bool _wasMapOn = true;
         private bool _wasIconLayerOn = true;
         private bool _wasViewOn = true;
+        private bool _wasGridLabelsOn = true;
 
         internal bool TryBind(DynamicMap map)
         {
@@ -49,6 +51,7 @@ namespace Map3d.Integration
             _mapImage = map.mapImage.GetComponent<Image>();
             _iconLayer = map.iconLayer;
             _viewIndicator = map.viewIndicator;
+            _gridLabels = map.gridLabels != null ? map.gridLabels.gameObject : null;
             _map = map;
             _bound = true;
             return true;
@@ -82,6 +85,11 @@ namespace Map3d.Integration
                     _wasViewOn = _viewIndicator.activeSelf;
                     _viewIndicator.SetActive(false);
                 }
+                if (_gridLabels != null)
+                {
+                    _wasGridLabelsOn = _gridLabels.activeSelf;
+                    _gridLabels.SetActive(false);
+                }
                 _applied = true;
             }
             else
@@ -90,6 +98,8 @@ namespace Map3d.Integration
                     _iconLayer.SetActive(false);
                 if (_viewIndicator != null && _viewIndicator.activeSelf)
                     _viewIndicator.SetActive(false);
+                if (_gridLabels != null && _gridLabels.activeSelf)
+                    _gridLabels.SetActive(false);
             }
 
             HideStockGridTiles(_map);
@@ -112,6 +122,8 @@ namespace Map3d.Integration
                 _iconLayer.SetActive(_wasIconLayerOn);
             if (_viewIndicator != null)
                 _viewIndicator.SetActive(_wasViewOn);
+            if (_gridLabels != null)
+                _gridLabels.SetActive(_wasGridLabelsOn);
             RestoreStockGridTiles(_map);
 
             _applied = false;
@@ -169,6 +181,7 @@ namespace Map3d.Integration
             _mapImage = null;
             _iconLayer = null;
             _viewIndicator = null;
+            _gridLabels = null;
             _map = null;
             _bound = false;
         }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Map3d.Config;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -8,12 +9,15 @@ namespace Map3d.Engine
 {
     /// <summary>
     /// Tilts stock MapImage cloth with optional terrain height displacement from HeightMapCache.
-    /// Geography UVs are heading-aligned; icons/cone share the cloth pivot.
+    /// Geography UVs are heading-aligned around stock look-ahead center; icons/cone share the cloth pivot.
     /// </summary>
     internal sealed class MapTiltEngine : IDisposable
     {
         internal const int Layer = 31;
         private const float IconLiftMeters = 4f;
+        private const float HeightGeoLerpK = 0.32f;
+        private const float GeoCachePruneMeters = 8000f;
+        private const int GeoCacheMaxEntries = 8192;
 
         private GameObject? _root;
         private Transform? _yaw;
@@ -42,6 +46,11 @@ namespace Map3d.Engine
         private Vector4 _uvRect;
         private bool _built;
 
+        private readonly Dictionary<long, float> _geoHeightCache = new Dictionary<long, float>(2048);
+        private float _geoCellMeters = 1000f;
+        private Vector3 _geoPruneOrigin;
+        private bool _geoPruneInit;
+
         internal RenderTexture? Output => _rt;
         internal float HeightScaleMeters => _heightScaleMeters;
 
@@ -64,7 +73,7 @@ namespace Map3d.Engine
             _tilt = Child(_yaw, "Pivot");
             _canvas = Child(_tilt, "Cloth");
             _icons = new ClothIconLayer(_tilt);
-            _grid = new StockClothGrid(_tilt);
+            _grid = new StockClothGrid(_canvas);
 
             var camGo = Child(_root.transform, "Cam").gameObject;
             _cam = camGo.AddComponent<Camera>();
@@ -131,10 +140,13 @@ namespace Map3d.Engine
             _radius = StockMapMetrics.ResolveRadius(map);
             _lookAhead = Mathf.Max(0f, Map3dConfig.LookAheadMeters.Value);
             _mapSize = mapSize;
-            ResolveClothExtents(aircraft, forward, right);
+            ResolveClothExtents();
             ResolveUvRect(sprite, out Texture? tex, out _uvRect);
             if (tex == null)
                 return false;
+
+            // Stock CenterMinimizedMap centers the window on look-ahead point.
+            Vector3 mapCenter = aircraft + forward * _lookAhead;
 
             EnsureRt(Map3dConfig.RenderSize.Value);
             _cam.targetTexture = _rt;
@@ -144,7 +156,8 @@ namespace Map3d.Engine
 
             float width = _clothHalfW * 2f;
             float depth = Mathf.Max(1f, _clothFar - _clothNear);
-            _canvas.localPosition = new Vector3(0f, 0f, (_clothNear + _clothFar) * 0.5f);
+            // Shift canvas so mesh geometric Z matches ClothWorld offsets around mapCenter.
+            _canvas.localPosition = new Vector3(0f, 0f, _lookAhead + (_clothNear + _clothFar) * 0.5f);
             _canvas.localRotation = Quaternion.identity;
             _canvas.localScale = new Vector3(width, 1f, depth);
 
@@ -152,18 +165,20 @@ namespace Map3d.Engine
             bool heightOn = Map3dConfig.HeightEnabled.Value && cache.IsReady;
             int res = Mathf.Clamp(Map3dConfig.HeightClothResolution.Value, 8, 96);
             EnsureGridMesh(heightOn ? res : 2);
+            UpdateGeoCellSize(res);
 
             ApplyMaterial(tex, tint);
 
             if (heightOn)
             {
                 _heightScaleMeters = cache.ResolveHeightScaleMeters(_radius);
-                ApplyDisplacedMesh(aircraft, forward, right, cache);
+                MaybePruneGeoCache(aircraft);
+                ApplyDisplacedMesh(mapCenter, forward, right, cache);
             }
             else
             {
                 _heightScaleMeters = 0f;
-                ApplyFlatUvs(aircraft, forward, right);
+                ApplyFlatUvs(mapCenter, forward, right);
             }
 
             float tilt = Mathf.Clamp(Map3dConfig.TiltDegrees.Value, 0f, 80f);
@@ -178,7 +193,7 @@ namespace Map3d.Engine
                 forward,
                 aircraftYaw,
                 _radius,
-                _clothFar,
+                _clothFar + _lookAhead,
                 _clothHalfW,
                 _cam,
                 cache,
@@ -188,7 +203,7 @@ namespace Map3d.Engine
             bool showGrid = SceneSingleton<MapOptions>.i == null || SceneSingleton<MapOptions>.i.showGridLabels;
             _grid?.Sync(
                 map,
-                aircraft,
+                mapCenter,
                 forward,
                 right,
                 _clothNear,
@@ -211,6 +226,8 @@ namespace Map3d.Engine
         {
             if (_mat == null)
                 return;
+            // Stock Image tint can carry alpha < 1; cloth must stay fully opaque.
+            tint.a = 1f;
             _mat.mainTexture = tex;
             _mat.SetTexture("_MainTex", tex);
             _mat.color = tint;
@@ -218,69 +235,59 @@ namespace Map3d.Engine
                 _mat.SetColor("_Color", tint);
         }
 
-        private void ResolveClothExtents(Vector3 aircraft, Vector3 forward, Vector3 right)
+        private void ResolveClothExtents()
         {
             float r = Mathf.Max(500f, _radius);
             float farScale = Mathf.Clamp(Map3dConfig.HorizonFarScale.Value, 1f, 12f);
             float nearScale = Mathf.Clamp(Map3dConfig.HorizonNearScale.Value, 0.1f, 4f);
             float sideScale = Mathf.Clamp(Map3dConfig.HorizonSideScale.Value, 0.5f, 4f);
-            float borderFar = DistanceToMapBorder(aircraft, forward);
-            _clothFar = Mathf.Max(r * farScale, borderFar);
+
+            // Fixed stock-radius window — no heading-dependent border stretch.
+            _clothFar = r * farScale;
             _clothNear = -r * nearScale;
-            // No side barrier: at least to map borders left/right.
-            float sideL = DistanceToMapBorder(aircraft, -right);
-            float sideR = DistanceToMapBorder(aircraft, right);
-            _clothHalfW = Mathf.Max(r * sideScale, sideL, sideR);
+            _clothHalfW = r * sideScale;
         }
 
-        private float DistanceToMapBorder(Vector3 aircraftLocal, Vector3 dir)
+        private void UpdateGeoCellSize(int clothRes)
         {
-            if (_mapSize.x < 1f || _mapSize.y < 1f)
-                return Mathf.Max(500f, _radius) * 2f;
-
-            GlobalPosition g = aircraftLocal.ToGlobalPosition();
-            float hx = _mapSize.x * 0.5f;
-            float hz = _mapSize.y * 0.5f;
-            float fx = dir.x;
-            float fz = dir.z;
-            float tMin = float.PositiveInfinity;
-
-            if (Mathf.Abs(fx) > 1e-5f)
-            {
-                float t1 = (hx - g.x) / fx;
-                float t2 = (-hx - g.x) / fx;
-                if (t1 > 50f) tMin = Mathf.Min(tMin, t1);
-                if (t2 > 50f) tMin = Mathf.Min(tMin, t2);
-            }
-            if (Mathf.Abs(fz) > 1e-5f)
-            {
-                float t1 = (hz - g.z) / fz;
-                float t2 = (-hz - g.z) / fz;
-                if (t1 > 50f) tMin = Mathf.Min(tMin, t1);
-                if (t2 > 50f) tMin = Mathf.Min(tMin, t2);
-            }
-
-            if (float.IsInfinity(tMin) || tMin < 50f)
-                return Mathf.Max(_mapSize.x, _mapSize.y) * 0.5f;
-            return tMin;
+            float span = Mathf.Max(_clothFar - _clothNear, _clothHalfW * 2f, 1000f);
+            int cells = Mathf.Max(2, clothRes - 1);
+            _geoCellMeters = Mathf.Max(250f, span / cells);
         }
 
-        private Vector3 ClothWorld(Vector3 aircraft, Vector3 forward, Vector3 right, float u, float v)
+        private void MaybePruneGeoCache(Vector3 aircraft)
+        {
+            if (!_geoPruneInit)
+            {
+                _geoPruneOrigin = aircraft;
+                _geoPruneInit = true;
+                return;
+            }
+
+            if ((aircraft - _geoPruneOrigin).sqrMagnitude < GeoCachePruneMeters * GeoCachePruneMeters
+                && _geoHeightCache.Count < GeoCacheMaxEntries)
+                return;
+
+            _geoHeightCache.Clear();
+            _geoPruneOrigin = aircraft;
+        }
+
+        private Vector3 ClothWorld(Vector3 origin, Vector3 forward, Vector3 right, float u, float v)
         {
             float x = (u - 0.5f) * 2f * _clothHalfW;
             float z = Mathf.Lerp(_clothNear, _clothFar, v);
-            return aircraft + right * x + forward * z;
+            return origin + right * x + forward * z;
         }
 
-        private void ApplyFlatUvs(Vector3 aircraft, Vector3 forward, Vector3 right)
+        private void ApplyFlatUvs(Vector3 origin, Vector3 forward, Vector3 right)
         {
             if (_mesh == null || _uvs.Length < 4)
                 return;
 
-            _uvs[0] = WorldToMapUv(ClothWorld(aircraft, forward, right, 0f, 0f));
-            _uvs[1] = WorldToMapUv(ClothWorld(aircraft, forward, right, 1f, 0f));
-            _uvs[2] = WorldToMapUv(ClothWorld(aircraft, forward, right, 0f, 1f));
-            _uvs[3] = WorldToMapUv(ClothWorld(aircraft, forward, right, 1f, 1f));
+            _uvs[0] = WorldToMapUv(ClothWorld(origin, forward, right, 0f, 0f));
+            _uvs[1] = WorldToMapUv(ClothWorld(origin, forward, right, 1f, 0f));
+            _uvs[2] = WorldToMapUv(ClothWorld(origin, forward, right, 0f, 1f));
+            _uvs[3] = WorldToMapUv(ClothWorld(origin, forward, right, 1f, 1f));
             _verts[0] = new Vector3(-0.5f, 0f, -0.5f);
             _verts[1] = new Vector3( 0.5f, 0f, -0.5f);
             _verts[2] = new Vector3(-0.5f, 0f,  0.5f);
@@ -292,7 +299,7 @@ namespace Map3d.Engine
         }
 
         private void ApplyDisplacedMesh(
-            Vector3 aircraft,
+            Vector3 origin,
             Vector3 forward,
             Vector3 right,
             HeightMapCache cache)
@@ -304,6 +311,7 @@ namespace Map3d.Engine
             float step = 1f / (n - 1);
             float sea = cache.SeaY;
             float scale = _heightScaleMeters;
+            float cell = Mathf.Max(1f, _geoCellMeters);
 
             for (int iz = 0; iz < n; iz++)
             {
@@ -312,13 +320,22 @@ namespace Map3d.Engine
                 {
                     float u = ix * step;
                     int idx = iz * n + ix;
-                    Vector3 world = ClothWorld(aircraft, forward, right, u, v);
+                    Vector3 world = ClothWorld(origin, forward, right, u, v);
                     _uvs[idx] = WorldToMapUv(world);
 
                     float h = sea;
                     if (!cache.TrySampleWorld(world, out h))
                         h = sea;
-                    float yLocal = (h - sea) * scale;
+                    float targetY = (h - sea) * scale;
+
+                    // Smooth in geographic space so yaw reuses the same cell height.
+                    GlobalPosition gp = world.ToGlobalPosition();
+                    long key = QuantizeKey(gp.x, gp.z, cell);
+                    float yLocal = targetY;
+                    if (_geoHeightCache.TryGetValue(key, out float prevY))
+                        yLocal = Mathf.Lerp(prevY, targetY, HeightGeoLerpK);
+                    _geoHeightCache[key] = yLocal;
+
                     _verts[idx] = new Vector3(u - 0.5f, yLocal, v - 0.5f);
                 }
             }
@@ -327,6 +344,13 @@ namespace Map3d.Engine
             _mesh.uv = _uvs;
             _mesh.RecalculateNormals();
             _mesh.RecalculateBounds();
+        }
+
+        private static long QuantizeKey(float gx, float gz, float cell)
+        {
+            int qx = Mathf.RoundToInt(gx / cell);
+            int qz = Mathf.RoundToInt(gz / cell);
+            return ((long)qx << 32) ^ (uint)qz;
         }
 
         private Vector2 WorldToMapUv(Vector3 worldLocal)
@@ -433,7 +457,7 @@ namespace Map3d.Engine
             _cam.orthographic = false;
             _cam.fieldOfView = Mathf.Clamp(Map3dConfig.ViewFov.Value, 20f, 75f);
             _cam.nearClipPlane = Mathf.Max(1f, height * 0.02f);
-            _cam.farClipPlane = Mathf.Max(80000f, _clothFar * 4f, r * 12f);
+            _cam.farClipPlane = Mathf.Max(80000f, (_clothFar + _lookAhead) * 4f, r * 12f);
         }
 
         private static bool TryResolveStock(DynamicMap map, out Sprite? sprite, out Color tint, out Vector2 mapSize)
@@ -481,15 +505,20 @@ namespace Map3d.Engine
 
         private static Material CreateMapMaterial()
         {
-            Shader? shader = Shader.Find("UI/Default")
-                ?? Shader.Find("Unlit/Texture")
+            // Opaque unlit — UI/Default alpha-blends and washed the cloth vs stock.
+            Shader? shader = Shader.Find("Unlit/Texture")
+                ?? Shader.Find("UI/Default")
                 ?? Shader.Find("Sprites/Default");
-            return new Material(shader!)
+            var mat = new Material(shader!)
             {
                 name = "Map3d.ClothMat",
                 hideFlags = HideFlags.HideAndDontSave,
-                color = Color.white
+                color = Color.white,
+                renderQueue = 2000
             };
+            if (mat.HasProperty("_ZWrite"))
+                mat.SetInt("_ZWrite", 1);
+            return mat;
         }
 
         private void EnsureRt(int size)
@@ -534,6 +563,8 @@ namespace Map3d.Engine
             _icons = null;
             _grid?.Dispose();
             _grid = null;
+            _geoHeightCache.Clear();
+            _geoPruneInit = false;
             if (_cam != null)
             {
                 _cam.targetTexture = null;

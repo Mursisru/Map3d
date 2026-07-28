@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.1] — 2026-07-28
+
+### Added
+
+* Single stock `mapGrid` UV quad on the cloth canvas (map-tiled, line-only bake, 50% opacity overlay).
+* Stock look-ahead pivot (`mapCenter = aircraft + forward × 4000 m`) matching `CenterMinimizedMap`.
+* Geographic height smoothing cache to stabilize terrain relief during heading changes.
+
+### Fixed
+
+* Floating/wavy cloth on yaw turns (height resampling + framing mismatch).
+* Green RT clear replaced with black; `MapBackground` stays cloth tint only.
+* Opaque cloth material (`Unlit/Texture`, forced alpha 1).
+* Hide full `gridLabels` in minimized 3D to prevent duplicate grids.
+
 ## [0.3.0] — 2026-07-28
 
 ### Added
