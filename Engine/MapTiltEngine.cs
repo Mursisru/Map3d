@@ -140,13 +140,11 @@ namespace Map3d.Engine
             _radius = StockMapMetrics.ResolveRadius(map);
             _lookAhead = Mathf.Max(0f, Map3dConfig.LookAheadMeters.Value);
             _mapSize = mapSize;
-            ResolveClothExtents();
+            Vector3 mapCenter = aircraft + forward * _lookAhead;
+            ResolveClothExtents(mapCenter);
             ResolveUvRect(sprite, out Texture? tex, out _uvRect);
             if (tex == null)
                 return false;
-
-            // Stock CenterMinimizedMap centers the window on look-ahead point.
-            Vector3 mapCenter = aircraft + forward * _lookAhead;
 
             EnsureRt(Map3dConfig.RenderSize.Value);
             _cam.targetTexture = _rt;
@@ -235,17 +233,35 @@ namespace Map3d.Engine
                 _mat.SetColor("_Color", tint);
         }
 
-        private void ResolveClothExtents()
+        private void ResolveClothExtents(Vector3 mapCenter)
         {
             float r = Mathf.Max(500f, _radius);
             float farScale = Mathf.Clamp(Map3dConfig.HorizonFarScale.Value, 1f, 12f);
             float nearScale = Mathf.Clamp(Map3dConfig.HorizonNearScale.Value, 0.1f, 4f);
             float sideScale = Mathf.Clamp(Map3dConfig.HorizonSideScale.Value, 0.5f, 4f);
 
-            // Fixed stock-radius window — no heading-dependent border stretch.
-            _clothFar = r * farScale;
+            // World-axis border reach from look-ahead center — stable on yaw (no heading rays).
+            float borderReach = CardinalReachToMapEdges(mapCenter);
+            _clothFar = Mathf.Max(r * farScale, borderReach);
             _clothNear = -r * nearScale;
-            _clothHalfW = r * sideScale;
+            _clothHalfW = Mathf.Max(r * sideScale, borderReach);
+        }
+
+        /// <summary>
+        /// Max distance from origin to nearest map edge along world X/Z.
+        /// Heading-independent — cloth size does not change when aircraft yaws.
+        /// </summary>
+        private float CardinalReachToMapEdges(Vector3 originLocal)
+        {
+            if (_mapSize.x < 1f || _mapSize.y < 1f)
+                return Mathf.Max(500f, _radius) * 2f;
+
+            GlobalPosition g = originLocal.ToGlobalPosition();
+            float hx = _mapSize.x * 0.5f;
+            float hz = _mapSize.y * 0.5f;
+            float reachX = hx - Mathf.Abs(g.x);
+            float reachZ = hz - Mathf.Abs(g.z);
+            return Mathf.Max(50f, reachX, reachZ);
         }
 
         private void UpdateGeoCellSize(int clothRes)

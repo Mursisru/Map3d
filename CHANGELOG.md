@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.2] — 2026-07-28
+
+### Changed
+
+* Cloth extends to map borders via heading-independent cardinal edge reach from the look-ahead center (stable on yaw, no diagonal corner stretch).
+
 ## [0.3.1] — 2026-07-28
 
 ### Added
