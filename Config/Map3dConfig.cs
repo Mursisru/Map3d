@@ -40,7 +40,7 @@ namespace Map3d.Config
             LookAheadMeters = config.Bind("Engine", "LookAheadMeters", 4000f, "Stock CenterMinimizedMap look-ahead.");
             HorizonFarScale = config.Bind("Engine", "HorizonFarScale", 4.5f, "Cloth extent ahead of aircraft / Radius (fills past visual horizon).");
             HorizonNearScale = config.Bind("Engine", "HorizonNearScale", 0.85f, "Cloth extent behind aircraft / Radius.");
-            HorizonSideScale = config.Bind("Engine", "HorizonSideScale", 1.15f, "Cloth half-width / Radius.");
+            HorizonSideScale = config.Bind("Engine", "HorizonSideScale", 1.15f, "Minimum cloth half-width / Radius; cloth also extends to map side borders.");
             ViewHeightScale = config.Bind("Camera", "ViewHeightScale", 1.28f, "Cloth camera height / Radius.");
             ViewBackScale = config.Bind("Camera", "ViewBackScale", 0.10f, "Cloth camera back / Radius.");
             ViewLookScale = config.Bind("Camera", "ViewLookScale", 0.26f, "Cloth look-ahead target / Radius.");

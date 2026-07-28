@@ -129,7 +129,7 @@ namespace Map3d.Engine
             _radius = StockMapMetrics.ResolveRadius(map);
             _lookAhead = Mathf.Max(0f, Map3dConfig.LookAheadMeters.Value);
             _mapSize = mapSize;
-            ResolveClothExtents();
+            ResolveClothExtents(aircraft, forward, right);
             ResolveUvRect(sprite, out Texture? tex, out _uvRect);
             if (tex == null)
                 return false;
@@ -204,16 +204,51 @@ namespace Map3d.Engine
                 _mat.SetColor("_Color", tint);
         }
 
-        private void ResolveClothExtents()
+        private void ResolveClothExtents(Vector3 aircraft, Vector3 forward, Vector3 right)
         {
             float r = Mathf.Max(500f, _radius);
             float farScale = Mathf.Clamp(Map3dConfig.HorizonFarScale.Value, 1f, 12f);
             float nearScale = Mathf.Clamp(Map3dConfig.HorizonNearScale.Value, 0.1f, 4f);
             float sideScale = Mathf.Clamp(Map3dConfig.HorizonSideScale.Value, 0.5f, 4f);
-            float mapCap = Mathf.Max(r * 2f, Mathf.Min(_mapSize.x, _mapSize.y) * 0.48f);
-            _clothFar = Mathf.Min(r * farScale, mapCap);
+            float borderFar = DistanceToMapBorder(aircraft, forward);
+            _clothFar = Mathf.Max(r * farScale, borderFar);
             _clothNear = -r * nearScale;
-            _clothHalfW = r * sideScale;
+            // No side barrier: at least to map borders left/right.
+            float sideL = DistanceToMapBorder(aircraft, -right);
+            float sideR = DistanceToMapBorder(aircraft, right);
+            _clothHalfW = Mathf.Max(r * sideScale, sideL, sideR);
+        }
+
+        private float DistanceToMapBorder(Vector3 aircraftLocal, Vector3 dir)
+        {
+            if (_mapSize.x < 1f || _mapSize.y < 1f)
+                return Mathf.Max(500f, _radius) * 2f;
+
+            GlobalPosition g = aircraftLocal.ToGlobalPosition();
+            float hx = _mapSize.x * 0.5f;
+            float hz = _mapSize.y * 0.5f;
+            float fx = dir.x;
+            float fz = dir.z;
+            float tMin = float.PositiveInfinity;
+
+            if (Mathf.Abs(fx) > 1e-5f)
+            {
+                float t1 = (hx - g.x) / fx;
+                float t2 = (-hx - g.x) / fx;
+                if (t1 > 50f) tMin = Mathf.Min(tMin, t1);
+                if (t2 > 50f) tMin = Mathf.Min(tMin, t2);
+            }
+            if (Mathf.Abs(fz) > 1e-5f)
+            {
+                float t1 = (hz - g.z) / fz;
+                float t2 = (-hz - g.z) / fz;
+                if (t1 > 50f) tMin = Mathf.Min(tMin, t1);
+                if (t2 > 50f) tMin = Mathf.Min(tMin, t2);
+            }
+
+            if (float.IsInfinity(tMin) || tMin < 50f)
+                return Mathf.Max(_mapSize.x, _mapSize.y) * 0.5f;
+            return tMin;
         }
 
         private Vector3 ClothWorld(Vector3 aircraft, Vector3 forward, Vector3 right, float u, float v)
@@ -364,8 +399,8 @@ namespace Map3d.Engine
             float height = r * Mathf.Clamp(Map3dConfig.ViewHeightScale.Value, 0.35f, 3f);
             float back = r * Mathf.Clamp(Map3dConfig.ViewBackScale.Value, 0f, 0.5f);
             float lookFrac = Mathf.Clamp(Map3dConfig.ViewLookScale.Value, 0f, 1f);
-            float look = Mathf.Lerp(0f, Mathf.Max(_lookAhead, _clothFar * 0.55f), lookFrac + 0.35f);
-            look = Mathf.Clamp(look, r * 0.15f, _clothFar * 0.85f);
+            float look = Mathf.Lerp(0f, Mathf.Max(_lookAhead, r * 1.2f), lookFrac + 0.35f);
+            look = Mathf.Clamp(look, r * 0.15f, Mathf.Max(_lookAhead + r, r * 2f));
 
             Vector3 pivot = _tilt!.position;
             Vector3 forward = _yaw!.forward;
