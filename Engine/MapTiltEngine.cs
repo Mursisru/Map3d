@@ -26,6 +26,7 @@ namespace Map3d.Engine
         private Mesh? _mesh;
         private Material? _mat;
         private ClothIconLayer? _icons;
+        private StockClothGrid? _grid;
         private Vector3[] _verts = Array.Empty<Vector3>();
         private Vector2[] _uvs = Array.Empty<Vector2>();
         private int[] _tris = Array.Empty<int>();
@@ -63,6 +64,7 @@ namespace Map3d.Engine
             _tilt = Child(_yaw, "Pivot");
             _canvas = Child(_tilt, "Cloth");
             _icons = new ClothIconLayer(_tilt);
+            _grid = new StockClothGrid(_tilt);
 
             var camGo = Child(_root.transform, "Cam").gameObject;
             _cam = camGo.AddComponent<Camera>();
@@ -182,6 +184,18 @@ namespace Map3d.Engine
                 cache,
                 _heightScaleMeters,
                 IconLiftMeters);
+
+            bool showGrid = SceneSingleton<MapOptions>.i == null || SceneSingleton<MapOptions>.i.showGridLabels;
+            _grid?.Sync(
+                map,
+                aircraft,
+                forward,
+                right,
+                _clothNear,
+                _clothFar,
+                _clothHalfW,
+                _mapSize,
+                showGrid);
 
             _cam.enabled = true;
             return true;
@@ -518,6 +532,8 @@ namespace Map3d.Engine
         {
             _icons?.Dispose();
             _icons = null;
+            _grid?.Dispose();
+            _grid = null;
             if (_cam != null)
             {
                 _cam.targetTexture = null;

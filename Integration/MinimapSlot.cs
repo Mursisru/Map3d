@@ -5,8 +5,8 @@ using UnityEngine.UI;
 namespace Map3d.Integration
 {
     /// <summary>
-    /// Replaces flat mapImage with engine RT; hides stock iconLayer, viewIndicator, mapGrid_*
-    /// while 3D is active. Grid is not redrawn.
+    /// Replaces flat mapImage with engine RT; hides stock iconLayer, viewIndicator, mapGrid_*.
+    /// 3D stock grid is drawn inside the RT by StockClothGrid.
     /// </summary>
     internal sealed class MinimapSlot : IDisposable
     {
@@ -146,6 +146,15 @@ namespace Map3d.Integration
                     continue;
                 if (!c.gameObject.activeSelf)
                     c.gameObject.SetActive(true);
+            }
+
+            try
+            {
+                map.gridLabels.UpdateGridColor();
+            }
+            catch
+            {
+                // Theme may be unavailable during load.
             }
         }
 

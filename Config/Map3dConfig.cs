@@ -27,6 +27,8 @@ namespace Map3d.Config
         internal static ConfigEntry<int> HeightClothResolution { get; private set; } = null!;
         internal static ConfigEntry<float> HeightVisualFraction { get; private set; } = null!;
         internal static ConfigEntry<float> HeightExaggeration { get; private set; } = null!;
+        internal static ConfigEntry<bool> GridEnabled { get; private set; } = null!;
+        internal static ConfigEntry<float> GridOpacity { get; private set; } = null!;
 
         internal static void Bind(ConfigFile config)
         {
@@ -55,6 +57,8 @@ namespace Map3d.Config
             HeightClothResolution = config.Bind("Height", "ClothResolution", 64, "Displaced cloth mesh resolution (N x N).");
             HeightVisualFraction = config.Bind("Height", "VisualFraction", 0.28f, "Relief vertical span as fraction of Radius.");
             HeightExaggeration = config.Bind("Height", "Exaggeration", 1f, "Extra multiplier on auto height scale.");
+            GridEnabled = config.Bind("Grid", "Enabled", true, "Stock mapGrid tiles on the 3D cloth (flat, no relief).");
+            GridOpacity = config.Bind("Grid", "Opacity", 0.5f, "Stock grid sprite alpha (0-1).");
             IsBound = true;
         }
 

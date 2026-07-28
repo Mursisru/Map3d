@@ -2,7 +2,7 @@
 
 [![Nuclear Option](https://img.shields.io/badge/Game-Nuclear%20Option-blue)](https://store.steampowered.com/app/2168680/Nuclear_Option/)
 [![BepInEx 5](https://img.shields.io/badge/Loader-BepInEx%205-orange)](https://docs.bepinex.dev/)
-[![Version](https://img.shields.io/badge/Version-0.2.0-green)](https://github.com/Mursisru/Map3d)
+[![Version](https://img.shields.io/badge/Version-0.3.0-green)](https://github.com/Mursisru/Map3d)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
 BepInEx 5 plugin for **Nuclear Option** that tilts the stock minimized `DynamicMap` into a 3D cloth view with terrain height relief. Unit icons and the view cone render on the same tilted layer as the map substrate.
@@ -19,7 +19,7 @@ BepInEx 5 plugin for **Nuclear Option** that tilts the stock minimized `DynamicM
 > After rebuilding or updating, delete `BepInEx\config\com.at747.map3d.cfg` if old camera/icon/height defaults stick around.
 
 > [!TIP]
-> Use [Configuration Manager](https://github.com/BepInEx/BepInEx.ConfigurationManager) to tweak tilt, zoom, height relief, icon size, and cone scale in-game.
+> Use [Configuration Manager](https://github.com/BepInEx/BepInEx.ConfigurationManager) to tweak tilt, zoom, height relief, grid opacity, icon size, and cone scale in-game.
 
 ---
 
@@ -32,7 +32,7 @@ BepInEx 5 plugin for **Nuclear Option** that tilts the stock minimized `DynamicM
 * **World heading on billboards** — aircraft icons face real `unit.forward` (not locked to your nose); still billboard toward the map camera.
 * **Stock-sized view cone** — length from stock `viewIndicator` rect / `mapDisplayFactor`; tip pivot matched to vanilla `(0.5, 0.05)`.
 * **Stock zoom framing** — visible radius derived from `mapScaleMinimized` × display factor × map lossy scale.
-* **No grid overlay** — stock `mapGrid_*` tiles hidden in minimized 3D; maximize restores them.
+* **Stock 3D grid** — flat vanilla `mapGrid` sprites on the cloth (no relief); default 50% opacity; HUD tiles stay hidden in minimized 3D.
 
 ---
 

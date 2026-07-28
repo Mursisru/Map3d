@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.0] — 2026-07-28
+
+### Added
+
+* Flat stock `mapGrid` tiles on the 3D cloth (`StockClothGrid`) — same sprites as vanilla, no terrain displacement, configurable opacity (default 0.5).
+* Cloth extends to map side/forward borders; camera look-ahead stays on the stock minimap window.
+
 ## [0.2.0] — 2026-07-27
 
 ### Added
