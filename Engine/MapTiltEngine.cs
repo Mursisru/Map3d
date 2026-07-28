@@ -30,6 +30,8 @@ namespace Map3d.Engine
         private Mesh? _mesh;
         private Material? _mat;
         private ClothIconLayer? _icons;
+        private ClothObjectiveLayer? _objectives;
+        private ClothRadarLayer? _radar;
         private StockClothGrid? _grid;
         private Vector3[] _verts = Array.Empty<Vector3>();
         private Vector2[] _uvs = Array.Empty<Vector2>();
@@ -74,6 +76,8 @@ namespace Map3d.Engine
             _tilt = Child(_yaw, "Pivot");
             _canvas = Child(_tilt, "Cloth");
             _icons = new ClothIconLayer(_tilt);
+            _objectives = new ClothObjectiveLayer(_tilt);
+            _radar = new ClothRadarLayer(_tilt);
             _grid = new StockClothGrid(_canvas);
 
             var camGo = Child(_root.transform, "Cam").gameObject;
@@ -192,6 +196,31 @@ namespace Map3d.Engine
                 aircraft,
                 forward,
                 aircraftYaw,
+                _radius,
+                _clothFar + _lookAhead,
+                _clothHalfW,
+                _cam,
+                cache,
+                _heightScaleMeters,
+                IconLiftMeters);
+
+            _objectives?.Sync(
+                map,
+                aircraft,
+                forward,
+                _radius,
+                _clothFar + _lookAhead,
+                _clothHalfW,
+                _cam,
+                cache,
+                _heightScaleMeters,
+                IconLiftMeters);
+
+            _radar?.Sync(
+                map,
+                ownAircraft,
+                aircraft,
+                forward,
                 _radius,
                 _clothFar + _lookAhead,
                 _clothHalfW,
@@ -641,6 +670,10 @@ namespace Map3d.Engine
         {
             _icons?.Dispose();
             _icons = null;
+            _objectives?.Dispose();
+            _objectives = null;
+            _radar?.Dispose();
+            _radar = null;
             _grid?.Dispose();
             _grid = null;
             _extentsInit = false;

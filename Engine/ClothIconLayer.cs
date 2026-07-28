@@ -77,6 +77,7 @@ namespace Map3d.Engine
             float cullFar = Mathf.Max(radius, clothFarMeters, clothHalfWidth);
             float cull = cullFar + 500f;
             float lift = Mathf.Max(1f, iconLiftMeters);
+            float refCamDist = StockMapMetrics.ResolveRefCameraDistance(clothCam, _root);
 
             SyncViewCone(map, aircraftPos, right, forward, radius, heights, heightScaleMeters, lift);
 
@@ -131,11 +132,14 @@ namespace Map3d.Engine
                 if (isOwn)
                     y += 1f;
 
+                var localPos = new Vector3(x, y, z);
+                scale = StockMapMetrics.CompensatePerspectiveIconSize(_root, clothCam, localPos, scale, refCamDist);
+
                 Slot slot = Get(used);
                 slot.Show(
                     sprite,
                     color,
-                    new Vector3(x, y, z),
+                    localPos,
                     scale,
                     headingUp,
                     isOwn,
@@ -402,6 +406,7 @@ namespace Map3d.Engine
 
                 ApplySpriteScale(_sr, sprite, Mathf.Max(1f, scale));
                 _sr.sprite = sprite;
+                color.a = 1f;
                 _sr.color = color;
                 _sr.sortingOrder = isOwn ? 40 : 20;
             }

@@ -61,6 +61,39 @@ namespace Map3d.Engine
             return Mathf.Clamp(meters, 100f, 800f);
         }
 
+        internal static float ResolveObjectiveMeters(float radius, float uiPixels)
+        {
+            float relative = Mathf.Max(0.5f, uiPixels / 20f);
+            return ResolveIconMeters(radius, relative, 1f);
+        }
+
+        /// <summary>
+        /// Perspective cloth cam shrinks distant geometry; scale billboards by distance/ref
+        /// so apparent screen size stays near stock flat minimap.
+        /// </summary>
+        internal static float CompensatePerspectiveIconSize(
+            Transform clothPivot,
+            Camera? clothCam,
+            Vector3 localPos,
+            float baseMeters,
+            float refCamDist)
+        {
+            if (clothCam == null || clothPivot == null || refCamDist < 1f)
+                return baseMeters;
+
+            Vector3 world = clothPivot.TransformPoint(localPos);
+            float dist = Vector3.Distance(clothCam.transform.position, world);
+            float ratio = Mathf.Clamp(dist / refCamDist, 1f, 3.5f);
+            return baseMeters * ratio;
+        }
+
+        internal static float ResolveRefCameraDistance(Camera? clothCam, Transform clothPivot)
+        {
+            if (clothCam == null || clothPivot == null)
+                return 5000f;
+            return Mathf.Max(500f, Vector3.Distance(clothCam.transform.position, clothPivot.position));
+        }
+
         /// <summary>
         /// Stock viewIndicator is 100×100 under mapImage (same space as mapDisplayFactor).
         /// Length ≈ rect height / displayFactor (~9 km), not a small fraction of window radius.

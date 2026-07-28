@@ -7,12 +7,21 @@ namespace Map3d
 {
     internal sealed class Map3dController : MonoBehaviour
     {
+        private static Map3dController? _current;
         private MapTiltEngine? _engine;
         private MinimapSlot? _slot;
         private bool _active;
+        private bool _clothVisible;
+
+        internal static bool IsClothMinimapActive =>
+            _current != null
+            && _current._active
+            && _current._clothVisible
+            && Map3dConfig.IsEnabled;
 
         internal void Activate()
         {
+            _current = this;
             _active = true;
             _engine ??= MapTiltEngine.Create();
             _slot ??= new MinimapSlot();
@@ -20,7 +29,10 @@ namespace Map3d
 
         internal void Deactivate()
         {
+            _clothVisible = false;
             _active = false;
+            if (_current == this)
+                _current = null;
             _slot?.Hide();
             _slot?.Dispose();
             _slot = null;
@@ -32,6 +44,7 @@ namespace Map3d
 
         internal void OnMaximized()
         {
+            _clothVisible = false;
             _slot?.Hide();
             _engine?.SetActive(false);
         }
@@ -47,6 +60,7 @@ namespace Map3d
 
             if (!_active || !Map3dConfig.IsEnabled)
             {
+                _clothVisible = false;
                 _slot?.Hide();
                 _engine?.SetActive(false);
                 return;
@@ -73,8 +87,12 @@ namespace Map3d
                 : null;
 
             if (!_engine!.Tick(own) || _engine.Output == null)
+            {
+                _clothVisible = false;
                 return;
+            }
 
+            _clothVisible = true;
             _slot.Show(_engine.Output);
         }
 

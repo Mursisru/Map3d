@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.4] — 2026-07-28
+
+### Added
+
+* `ClothObjectiveLayer` — stock objective markers on the 3D cloth (billboard sprites, terrain lift).
+* `ClothRadarLayer` — stock radar ping lines (`radarVisPrefab`) from emitter to own aircraft on cloth.
+
+### Fixed
+
+* Distant unit icons on the tilted minimap no longer shrink to dots: perspective scale compensation (cap ×3.5).
+
 ## [0.3.3] — 2026-07-28
 
 ### Added
