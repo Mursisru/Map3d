@@ -2,7 +2,7 @@
 
 [![Nuclear Option](https://img.shields.io/badge/Game-Nuclear%20Option-blue)](https://store.steampowered.com/app/2168680/Nuclear_Option/)
 [![BepInEx 5](https://img.shields.io/badge/Loader-BepInEx%205-orange)](https://docs.bepinex.dev/)
-[![Version](https://img.shields.io/badge/Version-0.3.2-green)](https://github.com/Mursisru/Map3d)
+[![Version](https://img.shields.io/badge/Version-0.3.3-green)](https://github.com/Mursisru/Map3d)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
 BepInEx 5 plugin for **Nuclear Option** that tilts the stock minimized `DynamicMap` into a 3D cloth view with terrain height relief. Unit icons and the view cone render on the same tilted layer as the map substrate.
@@ -65,6 +65,9 @@ Config file: `BepInEx\config\com.at747.map3d.cfg`
 | `TiltDegrees` | 55 | Cloth pitch toward the player |
 | `UseStockZoom` | true | Radius from stock minimap scale |
 | `LookAheadMeters` | 4000 | Same as stock `CenterMinimizedMap` |
+| `RenderSize` | 1024 | Cloth RenderTexture size (up to 2048) |
+| `RenderMsaa` | 4 | MSAA samples (0/2/4/8) — softens distant edges |
+| `MapMipBias` | 0.45 | Softens far map albedo (higher = softer) |
 | `HorizonFarScale` | 4.5 | Cloth extent ahead / radius |
 | `Height.Enabled` | true | Displace cloth from height cache |
 | `Height.CacheResolution` | 256 | Full-map bake resolution |

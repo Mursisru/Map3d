@@ -15,6 +15,7 @@ namespace Map3d.Engine
     {
         private const int MajorsPerTile = 4;
         private const float LocalYOffset = 0.004f;
+        private const int GridAniso = 4;
 
         private readonly Transform _root;
         private readonly MeshFilter _filter;
@@ -148,7 +149,8 @@ namespace Map3d.Engine
 
             _tex = baked;
             _tex.wrapMode = TextureWrapMode.Repeat;
-            _tex.filterMode = FilterMode.Bilinear;
+            _tex.filterMode = FilterMode.Trilinear;
+            _tex.anisoLevel = GridAniso;
             _material.mainTexture = _tex;
             if (_material.HasProperty("_MainTex"))
                 _material.SetTexture("_MainTex", _tex);
@@ -198,12 +200,13 @@ namespace Map3d.Engine
             Rect r = sprite.textureRect;
             int w = Mathf.Max(1, Mathf.RoundToInt(r.width));
             int h = Mathf.Max(1, Mathf.RoundToInt(r.height));
-            var dst = new Texture2D(w, h, TextureFormat.RGBA32, false)
+            var dst = new Texture2D(w, h, TextureFormat.RGBA32, true)
             {
                 name = "Map3d.StockGridTex",
                 hideFlags = HideFlags.HideAndDontSave,
-                filterMode = FilterMode.Bilinear,
-                wrapMode = TextureWrapMode.Repeat
+                filterMode = FilterMode.Trilinear,
+                wrapMode = TextureWrapMode.Repeat,
+                anisoLevel = GridAniso
             };
 
             try
@@ -229,7 +232,7 @@ namespace Map3d.Engine
                 }
 
                 dst.SetPixels(px);
-                dst.Apply(false, false);
+                dst.Apply(true, false);
                 return dst;
             }
             catch

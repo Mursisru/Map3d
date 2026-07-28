@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using Map3d.Config;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -15,9 +14,10 @@ namespace Map3d.Engine
     {
         internal const int Layer = 31;
         private const float IconLiftMeters = 4f;
-        private const float HeightGeoLerpK = 0.32f;
-        private const float GeoCachePruneMeters = 8000f;
-        private const int GeoCacheMaxEntries = 8192;
+        private const float DiagonalBorderFactor = 1.41421356f;
+        private const float ExtentCommitMeters = 400f;
+        private const float ExtentCommitRel = 0.04f;
+        private const float ClothResRefSpanMeters = 20000f;
 
         private GameObject? _root;
         private Transform? _yaw;
@@ -36,6 +36,10 @@ namespace Map3d.Engine
         private int[] _tris = Array.Empty<int>();
         private int _meshRes;
         private int _rtSize;
+        private int _rtMsaa;
+        private RenderTexture? _softMap;
+        private Texture? _softMapSrc;
+        private int _softMapId;
         private float _radius;
         private float _lookAhead;
         private float _clothNear;
@@ -45,11 +49,8 @@ namespace Map3d.Engine
         private Vector2 _mapSize;
         private Vector4 _uvRect;
         private bool _built;
-
-        private readonly Dictionary<long, float> _geoHeightCache = new Dictionary<long, float>(2048);
-        private float _geoCellMeters = 1000f;
-        private Vector3 _geoPruneOrigin;
-        private bool _geoPruneInit;
+        private bool _extentsInit;
+        private Vector3 _extentCommitPos;
 
         internal RenderTexture? Output => _rt;
         internal float HeightScaleMeters => _heightScaleMeters;
@@ -83,7 +84,7 @@ namespace Map3d.Engine
             _cam.cullingMask = 1 << Layer;
             _cam.depth = -120;
             _cam.enabled = false;
-            EnsureRt(Map3dConfig.RenderSize.Value);
+            EnsureRt(Map3dConfig.RenderSize.Value, Map3dConfig.RenderMsaa.Value);
             _cam.targetTexture = _rt;
 
             _filter = _canvas.gameObject.AddComponent<MeshFilter>();
@@ -141,12 +142,11 @@ namespace Map3d.Engine
             _lookAhead = Mathf.Max(0f, Map3dConfig.LookAheadMeters.Value);
             _mapSize = mapSize;
             Vector3 mapCenter = aircraft + forward * _lookAhead;
-            ResolveClothExtents(mapCenter);
-            ResolveUvRect(sprite, out Texture? tex, out _uvRect);
-            if (tex == null)
+            ResolveClothExtents(aircraft);
+            if (!EnsureSoftMap(sprite, out Texture tex))
                 return false;
 
-            EnsureRt(Map3dConfig.RenderSize.Value);
+            EnsureRt(Map3dConfig.RenderSize.Value, Map3dConfig.RenderMsaa.Value);
             _cam.targetTexture = _rt;
             _cam.backgroundColor = Color.black;
 
@@ -161,16 +161,18 @@ namespace Map3d.Engine
 
             HeightMapCache cache = HeightMapCache.Instance;
             bool heightOn = Map3dConfig.HeightEnabled.Value && cache.IsReady;
-            int res = Mathf.Clamp(Map3dConfig.HeightClothResolution.Value, 8, 96);
-            EnsureGridMesh(heightOn ? res : 2);
-            UpdateGeoCellSize(res);
+            int baseRes = Mathf.Clamp(Map3dConfig.HeightClothResolution.Value, 8, 96);
+            float span = Mathf.Max(_clothFar - _clothNear, _clothHalfW * 2f, 1f);
+            int res = heightOn
+                ? Mathf.Clamp(Mathf.RoundToInt(baseRes * span / ClothResRefSpanMeters), baseRes, 96)
+                : 2;
+            EnsureGridMesh(res);
 
             ApplyMaterial(tex, tint);
 
             if (heightOn)
             {
                 _heightScaleMeters = cache.ResolveHeightScaleMeters(_radius);
-                MaybePruneGeoCache(aircraft);
                 ApplyDisplacedMesh(mapCenter, forward, right, cache);
             }
             else
@@ -224,8 +226,11 @@ namespace Map3d.Engine
         {
             if (_mat == null)
                 return;
-            // Stock Image tint can carry alpha < 1; cloth must stay fully opaque.
             tint.a = 1f;
+            float boost = Mathf.Clamp(Map3dConfig.MapBrightness.Value, 0.5f, 2.5f);
+            tint.r = Mathf.Clamp01(tint.r * boost);
+            tint.g = Mathf.Clamp01(tint.g * boost);
+            tint.b = Mathf.Clamp01(tint.b * boost);
             _mat.mainTexture = tex;
             _mat.SetTexture("_MainTex", tex);
             _mat.color = tint;
@@ -233,59 +238,67 @@ namespace Map3d.Engine
                 _mat.SetColor("_Color", tint);
         }
 
-        private void ResolveClothExtents(Vector3 mapCenter)
+        private void ResolveClothExtents(Vector3 aircraftPos)
         {
             float r = Mathf.Max(500f, _radius);
             float farScale = Mathf.Clamp(Map3dConfig.HorizonFarScale.Value, 1f, 12f);
             float nearScale = Mathf.Clamp(Map3dConfig.HorizonNearScale.Value, 0.1f, 4f);
             float sideScale = Mathf.Clamp(Map3dConfig.HorizonSideScale.Value, 0.5f, 4f);
 
-            // World-axis border reach from look-ahead center — stable on yaw (no heading rays).
-            float borderReach = CardinalReachToMapEdges(mapCenter);
-            _clothFar = Mathf.Max(r * farScale, borderReach);
-            _clothNear = -r * nearScale;
-            _clothHalfW = Mathf.Max(r * sideScale, borderReach);
+            CardinalReach(aircraftPos, out float reachX, out float reachZ);
+            float borderCardinal = Mathf.Max(50f, reachX, reachZ);
+            float horizonFar = r * farScale - _lookAhead;
+            float borderForward = Mathf.Max(50f, borderCardinal * DiagonalBorderFactor - _lookAhead);
+            float targetFar = Mathf.Max(horizonFar, borderForward);
+            float targetHalfW = Mathf.Max(r * sideScale, borderCardinal);
+            float targetNear = -r * nearScale;
+
+            // Near always tracks radius (yaw-stable); far/halfW freeze until flight moves enough.
+            _clothNear = targetNear;
+
+            if (!_extentsInit)
+            {
+                CommitExtents(aircraftPos, targetFar, targetHalfW);
+                return;
+            }
+
+            float movedSq = (aircraftPos - _extentCommitPos).sqrMagnitude;
+            bool movedFar = movedSq >= ExtentCommitMeters * ExtentCommitMeters;
+            bool farChanged = RelDelta(_clothFar, targetFar) > ExtentCommitRel;
+            bool halfChanged = RelDelta(_clothHalfW, targetHalfW) > ExtentCommitRel;
+            if (movedFar || farChanged || halfChanged)
+                CommitExtents(aircraftPos, targetFar, targetHalfW);
         }
 
-        /// <summary>
-        /// Max distance from origin to nearest map edge along world X/Z.
-        /// Heading-independent — cloth size does not change when aircraft yaws.
-        /// </summary>
-        private float CardinalReachToMapEdges(Vector3 originLocal)
+        private void CommitExtents(Vector3 aircraftPos, float far, float halfW)
+        {
+            _clothFar = far;
+            _clothHalfW = halfW;
+            _extentCommitPos = aircraftPos;
+            _extentsInit = true;
+        }
+
+        private static float RelDelta(float current, float target)
+        {
+            float denom = Mathf.Max(Mathf.Abs(current), 1f);
+            return Mathf.Abs(target - current) / denom;
+        }
+
+        private void CardinalReach(Vector3 originLocal, out float reachX, out float reachZ)
         {
             if (_mapSize.x < 1f || _mapSize.y < 1f)
-                return Mathf.Max(500f, _radius) * 2f;
+            {
+                float fallback = Mathf.Max(500f, _radius) * 2f;
+                reachX = fallback;
+                reachZ = fallback;
+                return;
+            }
 
             GlobalPosition g = originLocal.ToGlobalPosition();
             float hx = _mapSize.x * 0.5f;
             float hz = _mapSize.y * 0.5f;
-            float reachX = hx - Mathf.Abs(g.x);
-            float reachZ = hz - Mathf.Abs(g.z);
-            return Mathf.Max(50f, reachX, reachZ);
-        }
-
-        private void UpdateGeoCellSize(int clothRes)
-        {
-            float span = Mathf.Max(_clothFar - _clothNear, _clothHalfW * 2f, 1000f);
-            int cells = Mathf.Max(2, clothRes - 1);
-            _geoCellMeters = Mathf.Max(250f, span / cells);
-        }
-
-        private void MaybePruneGeoCache(Vector3 aircraft)
-        {
-            if (!_geoPruneInit)
-            {
-                _geoPruneOrigin = aircraft;
-                _geoPruneInit = true;
-                return;
-            }
-
-            if ((aircraft - _geoPruneOrigin).sqrMagnitude < GeoCachePruneMeters * GeoCachePruneMeters
-                && _geoHeightCache.Count < GeoCacheMaxEntries)
-                return;
-
-            _geoHeightCache.Clear();
-            _geoPruneOrigin = aircraft;
+            reachX = hx - Mathf.Abs(g.x);
+            reachZ = hz - Mathf.Abs(g.z);
         }
 
         private Vector3 ClothWorld(Vector3 origin, Vector3 forward, Vector3 right, float u, float v)
@@ -310,8 +323,8 @@ namespace Map3d.Engine
             _verts[3] = new Vector3( 0.5f, 0f,  0.5f);
             _mesh.vertices = _verts;
             _mesh.uv = _uvs;
-            _mesh.RecalculateNormals();
-            _mesh.RecalculateBounds();
+            // Unlit — skip RecalculateNormals; fixed unit-cube bounds (Y relief stays inside).
+            _mesh.bounds = new Bounds(Vector3.zero, new Vector3(1.2f, 4f, 1.2f));
         }
 
         private void ApplyDisplacedMesh(
@@ -327,7 +340,7 @@ namespace Map3d.Engine
             float step = 1f / (n - 1);
             float sea = cache.SeaY;
             float scale = _heightScaleMeters;
-            float cell = Mathf.Max(1f, _geoCellMeters);
+            float maxAbsY = 0.5f;
 
             for (int iz = 0; iz < n; iz++)
             {
@@ -342,40 +355,25 @@ namespace Map3d.Engine
                     float h = sea;
                     if (!cache.TrySampleWorld(world, out h))
                         h = sea;
-                    float targetY = (h - sea) * scale;
-
-                    // Smooth in geographic space so yaw reuses the same cell height.
-                    GlobalPosition gp = world.ToGlobalPosition();
-                    long key = QuantizeKey(gp.x, gp.z, cell);
-                    float yLocal = targetY;
-                    if (_geoHeightCache.TryGetValue(key, out float prevY))
-                        yLocal = Mathf.Lerp(prevY, targetY, HeightGeoLerpK);
-                    _geoHeightCache[key] = yLocal;
-
+                    float yLocal = (h - sea) * scale;
+                    float absY = Mathf.Abs(yLocal);
+                    if (absY > maxAbsY)
+                        maxAbsY = absY;
                     _verts[idx] = new Vector3(u - 0.5f, yLocal, v - 0.5f);
                 }
             }
 
             _mesh.vertices = _verts;
             _mesh.uv = _uvs;
-            _mesh.RecalculateNormals();
-            _mesh.RecalculateBounds();
-        }
-
-        private static long QuantizeKey(float gx, float gz, float cell)
-        {
-            int qx = Mathf.RoundToInt(gx / cell);
-            int qz = Mathf.RoundToInt(gz / cell);
-            return ((long)qx << 32) ^ (uint)qz;
+            _mesh.bounds = new Bounds(Vector3.zero, new Vector3(1.2f, maxAbsY * 2.2f + 0.5f, 1.2f));
         }
 
         private Vector2 WorldToMapUv(Vector3 worldLocal)
         {
             GlobalPosition gp = worldLocal.ToGlobalPosition();
+            // No Clamp01 — GPU Clamp wrap on softMap handles OOB per-fragment (avoids vertex UV pile-up).
             float u01 = (gp.x + _mapSize.x * 0.5f) / _mapSize.x;
             float v01 = (gp.z + _mapSize.y * 0.5f) / _mapSize.y;
-            u01 = Mathf.Clamp01(u01);
-            v01 = Mathf.Clamp01(v01);
             return new Vector2(_uvRect.x + u01 * _uvRect.z, _uvRect.y + v01 * _uvRect.w);
         }
 
@@ -504,19 +502,70 @@ namespace Map3d.Engine
             return sprite != null && sprite.texture != null && mapSize.x > 1f;
         }
 
-        private static void ResolveUvRect(Sprite? sprite, out Texture? tex, out Vector4 rect)
+        /// <summary>
+        /// Blit stock MapImage sprite rect into a mipmapped RT so distant cloth samples soft-filter
+        /// instead of harsh bilinear shimmer. UV space becomes 0..1 over the sprite.
+        /// </summary>
+        private bool EnsureSoftMap(Sprite? sprite, out Texture tex)
         {
-            tex = null;
-            rect = new Vector4(0f, 0f, 1f, 1f);
-            if (sprite == null)
-                return;
-            tex = sprite.texture;
-            if (tex == null)
-                return;
+            tex = Texture2D.blackTexture;
+            if (sprite == null || sprite.texture == null)
+                return false;
+
+            Texture src = sprite.texture;
+            int id = sprite.GetInstanceID();
+            float bias = Mathf.Clamp(Map3dConfig.MapMipBias.Value, -1f, 3f);
+
+            if (_softMap != null && _softMapSrc == src && _softMapId == id)
+            {
+                _softMap.mipMapBias = bias;
+                _uvRect = new Vector4(0f, 0f, 1f, 1f);
+                tex = _softMap;
+                return true;
+            }
+
+            ReleaseSoftMap();
+
             Rect tr = sprite.textureRect;
-            float tw = Mathf.Max(1f, tex.width);
-            float th = Mathf.Max(1f, tex.height);
-            rect = new Vector4(tr.x / tw, tr.y / th, tr.width / tw, tr.height / th);
+            int w = Mathf.Clamp(Mathf.RoundToInt(tr.width), 64, 4096);
+            int h = Mathf.Clamp(Mathf.RoundToInt(tr.height), 64, 4096);
+
+            _softMap = new RenderTexture(w, h, 0, RenderTextureFormat.ARGB32)
+            {
+                name = "Map3d.SoftMap",
+                useMipMap = true,
+                autoGenerateMips = true,
+                filterMode = FilterMode.Trilinear,
+                anisoLevel = 8,
+                wrapMode = TextureWrapMode.Clamp,
+                mipMapBias = bias
+            };
+            _softMap.Create();
+
+            // Blit only the sprite atlas rect into soft map (full 0..1 UV).
+            float tw = Mathf.Max(1f, src.width);
+            float th = Mathf.Max(1f, src.height);
+            var scale = new Vector2(tr.width / tw, tr.height / th);
+            var offset = new Vector2(tr.x / tw, tr.y / th);
+            Graphics.Blit(src, _softMap, scale, offset);
+
+            _softMapSrc = src;
+            _softMapId = id;
+            _uvRect = new Vector4(0f, 0f, 1f, 1f);
+            tex = _softMap;
+            return true;
+        }
+
+        private void ReleaseSoftMap()
+        {
+            if (_softMap != null)
+            {
+                _softMap.Release();
+                UnityEngine.Object.Destroy(_softMap);
+                _softMap = null;
+            }
+            _softMapSrc = null;
+            _softMapId = 0;
         }
 
         private static Material CreateMapMaterial()
@@ -537,12 +586,14 @@ namespace Map3d.Engine
             return mat;
         }
 
-        private void EnsureRt(int size)
+        private void EnsureRt(int size, int msaa)
         {
             size = Mathf.Clamp(size, 128, 2048);
-            if (_rt != null && _rtSize == size)
+            msaa = NormalizeMsaa(msaa);
+            if (_rt != null && _rtSize == size && _rtMsaa == msaa)
                 return;
             _rtSize = size;
+            _rtMsaa = msaa;
             if (_cam != null)
                 _cam.targetTexture = null;
             if (_rt != null)
@@ -553,9 +604,22 @@ namespace Map3d.Engine
             _rt = new RenderTexture(size, size, 16, RenderTextureFormat.ARGB32)
             {
                 name = "Map3d.RT",
-                filterMode = FilterMode.Bilinear
+                antiAliasing = msaa,
+                filterMode = FilterMode.Bilinear,
+                useMipMap = false
             };
             _rt.Create();
+        }
+
+        private static int NormalizeMsaa(int samples)
+        {
+            if (samples <= 0)
+                return 1;
+            if (samples <= 2)
+                return 2;
+            if (samples <= 4)
+                return 4;
+            return 8;
         }
 
         private static Transform Child(Transform parent, string name)
@@ -579,8 +643,7 @@ namespace Map3d.Engine
             _icons = null;
             _grid?.Dispose();
             _grid = null;
-            _geoHeightCache.Clear();
-            _geoPruneInit = false;
+            _extentsInit = false;
             if (_cam != null)
             {
                 _cam.targetTexture = null;
@@ -592,6 +655,7 @@ namespace Map3d.Engine
                 UnityEngine.Object.Destroy(_rt);
                 _rt = null;
             }
+            ReleaseSoftMap();
             if (_mesh != null)
             {
                 UnityEngine.Object.Destroy(_mesh);

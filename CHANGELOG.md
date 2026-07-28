@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.3] — 2026-07-28
+
+### Added
+
+* `MapBrightness` config (default 1.22) to match stock flat map albedo on Unlit cloth.
+* RenderTexture quality: 1024px, MSAA 4, mipmapped soft map albedo with configurable `MapMipBias`.
+
+### Fixed
+
+* Residual map float on yaw and large cloth spans: removed vertex UV `Clamp01` (GPU clamp per-fragment), extent hysteresis instead of per-frame lerp, cloth mesh resolution scales with span, grid UV synced 1:1 with cloth.
+* Cloth albedo no longer multiplied by `mapBackground` tint (often black).
+
 ## [0.3.2] — 2026-07-28
 
 ### Changed
