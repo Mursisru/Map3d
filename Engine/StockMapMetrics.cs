@@ -68,6 +68,28 @@ namespace Map3d.Engine
         }
 
         /// <summary>
+        /// Stock RadarMapVis width ≈ thin UI stroke. Prefer a fraction of unit icon size —
+        /// rect.width/displayFactor can explode into a multi-km "slab".
+        /// </summary>
+        internal static float ResolveRadarLineWidthMeters(DynamicMap map, UnityEngine.UI.Image? ui, float radius)
+        {
+            float icon = ResolveIconMeters(radius, 1f, 1f);
+            float width = icon * 0.22f;
+            if (map != null && TryGetDisplayAndLossy(map, out float display, out float lossy) && ui != null)
+            {
+                RectTransform rt = ui.rectTransform;
+                if (rt != null)
+                {
+                    float uiW = Mathf.Max(1f, Mathf.Min(rt.rect.width, 12f));
+                    float fromStock = uiW / Mathf.Max(1e-8f, display * lossy);
+                    width = Mathf.Clamp(fromStock, icon * 0.12f, icon * 0.45f);
+                }
+            }
+
+            return Mathf.Clamp(width, 20f, 90f);
+        }
+
+        /// <summary>
         /// Perspective cloth cam shrinks distant geometry; scale billboards by distance/ref
         /// so apparent screen size stays near stock flat minimap.
         /// </summary>

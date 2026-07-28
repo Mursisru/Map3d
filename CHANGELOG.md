@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.5] — 2026-07-28
+
+### Fixed
+
+* Large building / hangar / ammo map icons missing on the 3D cloth: stock true-size footprints were drawn at real meters (~tens of m) and vanished next to vehicle billboards (100–800 m). Buildings now use a camera-facing rect with stock `width×length` proportions plus the stock min-size floor (`mapInverseScale×10` equivalent) and camera pull.
+* Soft-hide stock `iconLayer` via `CanvasGroup` (keeps `UpdateIcon` alive) instead of `SetActive(false)`.
+
+### Changed
+
+* Building icons (`Building && maxRadius > 10`) render as oriented billboard rects rather than flat coplanar footprints (Sprites/Default depth vs opaque cloth).
+
 ## [0.3.4] — 2026-07-28
 
 ### Added

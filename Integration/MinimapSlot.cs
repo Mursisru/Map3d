@@ -5,23 +5,27 @@ using UnityEngine.UI;
 namespace Map3d.Integration
 {
     /// <summary>
-    /// Replaces flat mapImage with engine RT; hides stock iconLayer, viewIndicator, mapGrid_*.
-    /// 3D stock grid is drawn inside the RT by StockClothGrid.
+    /// Replaces flat mapImage with engine RT; soft-hides stock iconLayer (keeps Update alive),
+    /// hides viewIndicator and mapGrid_*. 3D grid drawn by StockClothGrid.
     /// </summary>
     internal sealed class MinimapSlot : IDisposable
     {
         private RawImage? _raw;
         private Image? _mapImage;
         private GameObject? _iconLayer;
+        private CanvasGroup? _iconGroup;
         private GameObject? _viewIndicator;
         private GameObject? _gridLabels;
         private DynamicMap? _map;
         private bool _bound;
         private bool _applied;
         private bool _wasMapOn = true;
-        private bool _wasIconLayerOn = true;
         private bool _wasViewOn = true;
         private bool _wasGridLabelsOn = true;
+        private float _wasIconAlpha = 1f;
+        private bool _wasIconBlocks;
+        private bool _wasIconInteractable = true;
+        private bool _createdIconGroup;
 
         internal bool TryBind(DynamicMap map)
         {
@@ -75,11 +79,7 @@ namespace Map3d.Integration
                     _wasMapOn = _mapImage.enabled;
                     _mapImage.enabled = false;
                 }
-                if (_iconLayer != null)
-                {
-                    _wasIconLayerOn = _iconLayer.activeSelf;
-                    _iconLayer.SetActive(false);
-                }
+                SoftHideIconLayer(true);
                 if (_viewIndicator != null)
                 {
                     _wasViewOn = _viewIndicator.activeSelf;
@@ -94,8 +94,7 @@ namespace Map3d.Integration
             }
             else
             {
-                if (_iconLayer != null && _iconLayer.activeSelf)
-                    _iconLayer.SetActive(false);
+                SoftHideIconLayer(false);
                 if (_viewIndicator != null && _viewIndicator.activeSelf)
                     _viewIndicator.SetActive(false);
                 if (_gridLabels != null && _gridLabels.activeSelf)
@@ -118,8 +117,7 @@ namespace Map3d.Integration
 
             if (_mapImage != null)
                 _mapImage.enabled = _wasMapOn;
-            if (_iconLayer != null)
-                _iconLayer.SetActive(_wasIconLayerOn);
+            SoftRestoreIconLayer();
             if (_viewIndicator != null)
                 _viewIndicator.SetActive(_wasViewOn);
             if (_gridLabels != null)
@@ -127,6 +125,50 @@ namespace Map3d.Integration
             RestoreStockGridTiles(_map);
 
             _applied = false;
+        }
+
+        private void SoftHideIconLayer(bool firstApply)
+        {
+            if (_iconLayer == null)
+                return;
+
+            // Keep GameObject active so UnitMapIcon/ObjectiveMarker Update paths stay alive.
+            if (!_iconLayer.activeSelf)
+                _iconLayer.SetActive(true);
+
+            _iconGroup = _iconLayer.GetComponent<CanvasGroup>();
+            if (_iconGroup == null)
+            {
+                _iconGroup = _iconLayer.AddComponent<CanvasGroup>();
+                _createdIconGroup = true;
+            }
+
+            if (firstApply)
+            {
+                _wasIconAlpha = _iconGroup.alpha;
+                _wasIconBlocks = _iconGroup.blocksRaycasts;
+                _wasIconInteractable = _iconGroup.interactable;
+            }
+
+            _iconGroup.alpha = 0f;
+            _iconGroup.blocksRaycasts = false;
+            _iconGroup.interactable = false;
+        }
+
+        private void SoftRestoreIconLayer()
+        {
+            if (_iconGroup != null)
+            {
+                _iconGroup.alpha = _wasIconAlpha;
+                _iconGroup.blocksRaycasts = _wasIconBlocks;
+                _iconGroup.interactable = _wasIconInteractable;
+                if (_createdIconGroup)
+                {
+                    UnityEngine.Object.Destroy(_iconGroup);
+                    _createdIconGroup = false;
+                }
+                _iconGroup = null;
+            }
         }
 
         private static void HideStockGridTiles(DynamicMap? map)
@@ -180,6 +222,7 @@ namespace Map3d.Integration
             }
             _mapImage = null;
             _iconLayer = null;
+            _iconGroup = null;
             _viewIndicator = null;
             _gridLabels = null;
             _map = null;

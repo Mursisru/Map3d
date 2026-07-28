@@ -4,16 +4,20 @@ using System.Reflection;
 using Map3d.Config;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.UI;
 
 namespace Map3d.Engine
 {
     /// <summary>
-    /// Stock objective markers on cloth: 3D world position, billboard sprite like unit icons.
+    /// Stock objective markers on cloth: billboard sprite + DisplayName label (GUN/SHED).
     /// </summary>
     internal sealed class ClothObjectiveLayer : IDisposable
     {
         private static readonly FieldInfo? PosResultField =
             typeof(ObjectiveMarker).GetField("posResult", BindingFlags.Instance | BindingFlags.NonPublic);
+
+        private static readonly FieldInfo? ObjNameField =
+            typeof(ObjectiveMarker).GetField("objName", BindingFlags.Instance | BindingFlags.NonPublic);
 
         private readonly Transform _root;
         private readonly List<Slot> _pool = new List<Slot>(16);
@@ -26,8 +30,11 @@ namespace Map3d.Engine
             _mat = new Material(sh!)
             {
                 name = "Map3d.ClothObjectiveMat",
-                hideFlags = HideFlags.HideAndDontSave
+                hideFlags = HideFlags.HideAndDontSave,
+                renderQueue = 3000
             };
+            _mat.SetInt("_ZTest", (int)CompareFunction.Always);
+            _mat.SetInt("_ZWrite", 0);
         }
 
         internal void Sync(
@@ -35,7 +42,8 @@ namespace Map3d.Engine
             Vector3 aircraftPos,
             Vector3 forward,
             float radius,
-            float clothFarMeters,
+            float clothZNear,
+            float clothZFar,
             float clothHalfWidth,
             Camera? clothCam,
             HeightMapCache? heights,
@@ -55,8 +63,7 @@ namespace Map3d.Engine
             else
                 right.Normalize();
 
-            float cullFar = Mathf.Max(radius, clothFarMeters, clothHalfWidth);
-            float cull = cullFar + 500f;
+            float margin = 2500f;
             float lift = Mathf.Max(1f, iconLiftMeters);
             float refCamDist = StockMapMetrics.ResolveRefCameraDistance(clothCam, _root);
 
@@ -75,7 +82,9 @@ namespace Map3d.Engine
                 Vector3 delta = world - aircraftPos;
                 float x = Vector3.Dot(delta, right);
                 float z = Vector3.Dot(delta, forward);
-                if (x * x + z * z > cull * cull)
+                if (Mathf.Abs(x) > clothHalfWidth + margin)
+                    continue;
+                if (z < clothZNear - margin || z > clothZFar + margin)
                     continue;
 
                 Sprite? sprite = marker.markerImg.sprite;
@@ -83,6 +92,20 @@ namespace Map3d.Engine
                     continue;
 
                 Color color = marker.markerImg.color;
+                string? label = null;
+                Color labelColor = Color.green;
+                if (ObjNameField?.GetValue(marker) is Text objName && objName != null)
+                {
+                    if (objName.enabled && !string.IsNullOrEmpty(objName.text) && !marker.masked)
+                    {
+                        label = objName.text;
+                        labelColor = objName.color;
+                        if (labelColor.a < 0.05f)
+                            labelColor = Color.green;
+                        labelColor.a = 1f;
+                    }
+                }
+
                 if (marker.masked)
                 {
                     color *= 0.5f;
@@ -97,7 +120,7 @@ namespace Map3d.Engine
                 var localPos = new Vector3(x, y + 0.5f, z);
                 scale = StockMapMetrics.CompensatePerspectiveIconSize(_root, clothCam, localPos, scale, refCamDist);
 
-                Get(used).Show(sprite, color, localPos, scale, clothCam);
+                Get(used).Show(sprite, color, localPos, scale, clothCam, label, labelColor);
                 used++;
             }
 
@@ -128,7 +151,21 @@ namespace Map3d.Engine
                 var sr = go.AddComponent<SpriteRenderer>();
                 sr.sharedMaterial = _mat;
                 sr.shadowCastingMode = ShadowCastingMode.Off;
-                _pool.Add(new Slot(go, sr));
+
+                var labelGo = new GameObject("Label");
+                labelGo.layer = MapTiltEngine.Layer;
+                labelGo.transform.SetParent(go.transform, false);
+                labelGo.transform.localPosition = new Vector3(0f, 1.2f, 0f);
+                var tm = labelGo.AddComponent<TextMesh>();
+                tm.anchor = TextAnchor.LowerCenter;
+                tm.alignment = TextAlignment.Center;
+                tm.characterSize = 0.35f;
+                tm.fontSize = 32;
+                tm.color = Color.green;
+                tm.text = string.Empty;
+                labelGo.SetActive(false);
+
+                _pool.Add(new Slot(go, sr, tm));
             }
             return _pool[index];
         }
@@ -155,14 +192,23 @@ namespace Map3d.Engine
         {
             internal readonly GameObject Go;
             private readonly SpriteRenderer _sr;
+            private readonly TextMesh _label;
 
-            internal Slot(GameObject go, SpriteRenderer sr)
+            internal Slot(GameObject go, SpriteRenderer sr, TextMesh label)
             {
                 Go = go;
                 _sr = sr;
+                _label = label;
             }
 
-            internal void Show(Sprite sprite, Color color, Vector3 localPos, float scale, Camera? clothCam)
+            internal void Show(
+                Sprite sprite,
+                Color color,
+                Vector3 localPos,
+                float scale,
+                Camera? clothCam,
+                string? label,
+                Color labelColor)
             {
                 if (!Go.activeSelf)
                     Go.SetActive(true);
@@ -188,10 +234,31 @@ namespace Map3d.Engine
                 _sr.sprite = sprite;
                 _sr.color = color;
                 _sr.sortingOrder = 30;
+
+                if (clothCam != null)
+                    t.position -= clothCam.transform.forward * Mathf.Max(15f, scale * 0.08f);
+
+                if (!string.IsNullOrEmpty(label))
+                {
+                    _label.text = label;
+                    _label.color = labelColor;
+                    // Counter parent scale so text stays readable.
+                    float inv = 1f / Mathf.Max(s, 0.0001f);
+                    _label.transform.localScale = new Vector3(inv, inv, inv);
+                    _label.transform.localPosition = new Vector3(0f, 0.55f * dim + 0.15f, 0f);
+                    if (!_label.gameObject.activeSelf)
+                        _label.gameObject.SetActive(true);
+                }
+                else if (_label.gameObject.activeSelf)
+                {
+                    _label.gameObject.SetActive(false);
+                }
             }
 
             internal void Hide()
             {
+                if (_label.gameObject.activeSelf)
+                    _label.gameObject.SetActive(false);
                 if (Go.activeSelf)
                     Go.SetActive(false);
             }

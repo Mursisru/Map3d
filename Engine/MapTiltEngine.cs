@@ -14,6 +14,7 @@ namespace Map3d.Engine
     {
         internal const int Layer = 31;
         private const float IconLiftMeters = 4f;
+        private const float IconLiftHeightScale = 120f;
         private const float DiagonalBorderFactor = 1.41421356f;
         private const float ExtentCommitMeters = 400f;
         private const float ExtentCommitRel = 0.04f;
@@ -190,6 +191,12 @@ namespace Map3d.Engine
             _tilt.localPosition = Vector3.zero;
 
             FrameClothCamera(cache);
+            float clothZNear = _lookAhead + _clothNear;
+            float clothZFar = _lookAhead + _clothFar;
+            // Lift must clear mesh bilinear error: heightScale * Δh can bury icons under opaque cloth.
+            float iconLift = Mathf.Max(
+                IconLiftMeters,
+                _heightScaleMeters * IconLiftHeightScale + 25f);
             _icons?.Sync(
                 map,
                 ownAircraft,
@@ -197,24 +204,26 @@ namespace Map3d.Engine
                 forward,
                 aircraftYaw,
                 _radius,
-                _clothFar + _lookAhead,
+                clothZNear,
+                clothZFar,
                 _clothHalfW,
                 _cam,
                 cache,
                 _heightScaleMeters,
-                IconLiftMeters);
+                iconLift);
 
             _objectives?.Sync(
                 map,
                 aircraft,
                 forward,
                 _radius,
-                _clothFar + _lookAhead,
+                clothZNear,
+                clothZFar,
                 _clothHalfW,
                 _cam,
                 cache,
                 _heightScaleMeters,
-                IconLiftMeters);
+                iconLift);
 
             _radar?.Sync(
                 map,
@@ -222,12 +231,13 @@ namespace Map3d.Engine
                 aircraft,
                 forward,
                 _radius,
-                _clothFar + _lookAhead,
+                clothZNear,
+                clothZFar,
                 _clothHalfW,
                 _cam,
                 cache,
                 _heightScaleMeters,
-                IconLiftMeters);
+                iconLift);
 
             bool showGrid = SceneSingleton<MapOptions>.i == null || SceneSingleton<MapOptions>.i.showGridLabels;
             _grid?.Sync(

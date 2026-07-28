@@ -10,12 +10,11 @@ using UnityEngine.UI;
 namespace Map3d.Engine
 {
     /// <summary>
-    /// Stock radar ping lines on cloth: emitter → own aircraft, billboard stretch like stock radarVisPrefab.
+    /// Stock radar ping lines on cloth: flat stretch emitter → own aircraft (same as RadarMapVis.Refresh).
     /// </summary>
     internal sealed class ClothRadarLayer : IDisposable
     {
-        private const float GridYOffset = 0.006f;
-        private const float LineWidthStockMul = 1f;
+        private static readonly Quaternion FlatOnCloth = Quaternion.Euler(90f, 0f, 0f);
 
         private static readonly FieldInfo? RadarVisListField =
             typeof(DynamicMap).GetField("radarVisualizations", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -31,8 +30,11 @@ namespace Map3d.Engine
             _mat = new Material(sh!)
             {
                 name = "Map3d.ClothRadarMat",
-                hideFlags = HideFlags.HideAndDontSave
+                hideFlags = HideFlags.HideAndDontSave,
+                renderQueue = 3000
             };
+            _mat.SetInt("_ZTest", (int)CompareFunction.Always);
+            _mat.SetInt("_ZWrite", 0);
         }
 
         internal void Sync(
@@ -41,7 +43,8 @@ namespace Map3d.Engine
             Vector3 aircraftPos,
             Vector3 forward,
             float radius,
-            float clothFarMeters,
+            float clothZNear,
+            float clothZFar,
             float clothHalfWidth,
             Camera? clothCam,
             HeightMapCache? heights,
@@ -60,11 +63,12 @@ namespace Map3d.Engine
             else
                 right.Normalize();
 
-            float cullFar = Mathf.Max(radius, clothFarMeters, clothHalfWidth);
-            float cull = cullFar + 500f;
             float lift = Mathf.Max(1f, iconLiftMeters);
-            float refCamDist = StockMapMetrics.ResolveRefCameraDistance(clothCam, _root);
+            float margin = 2500f;
             float now = Time.timeSinceLevelLoad;
+
+            Vector3 ownCloth = ToClothLocal(
+                aircraftPos, aircraftPos, right, forward, heights, heightScaleMeters, lift);
 
             int used = 0;
             for (int i = 0; i < list.Count; i++)
@@ -80,16 +84,12 @@ namespace Map3d.Engine
                     continue;
 
                 Vector3 emitWorld = emitter.GlobalPosition().ToLocalPosition();
-                Vector3 delta = emitWorld - aircraftPos;
-                float x = Vector3.Dot(delta, right);
-                float z = Vector3.Dot(delta, forward);
-                if (x * x + z * z > cull * cull)
-                    continue;
+                Vector3 fromCloth = ToClothLocal(
+                    emitWorld, aircraftPos, right, forward, heights, heightScaleMeters, lift);
 
-                Vector3 fromCloth = ToClothLocal(emitWorld, aircraftPos, right, forward, heights, heightScaleMeters, lift);
-                fromCloth.y = GridYOffset;
-                Vector3 toCloth = ToClothLocal(aircraftPos, aircraftPos, right, forward, heights, heightScaleMeters, lift);
-                toCloth.y = GridYOffset;
+                if (!InClothWindow(fromCloth.x, fromCloth.z, clothZNear, clothZFar, clothHalfWidth, margin)
+                    && !InClothWindow(ownCloth.x, ownCloth.z, clothZNear, clothZFar, clothHalfWidth, margin))
+                    continue;
 
                 Sprite? sprite = ui.sprite;
                 if (sprite == null)
@@ -102,15 +102,26 @@ namespace Map3d.Engine
 
                 ui.enabled = false;
 
-                float width = StockMapMetrics.ResolveIconMeters(radius, LineWidthStockMul, 1f) * 0.15f;
-                width = StockMapMetrics.CompensatePerspectiveIconSize(_root, clothCam, fromCloth, width, refCamDist);
-
-                Get(used).ShowStretch(sprite, color, fromCloth, toCloth, width, clothCam);
+                float width = StockMapMetrics.ResolveRadarLineWidthMeters(map, ui, radius);
+                Get(used).ShowFlatStretch(sprite, color, fromCloth, ownCloth, width);
                 used++;
             }
 
             for (int i = used; i < _pool.Count; i++)
                 _pool[i].Hide();
+        }
+
+        private static bool InClothWindow(
+            float x,
+            float z,
+            float zNear,
+            float zFar,
+            float halfW,
+            float margin)
+        {
+            if (Mathf.Abs(x) > halfW + margin)
+                return false;
+            return z >= zNear - margin && z <= zFar + margin;
         }
 
         private static bool TryReadEntry(
@@ -210,17 +221,18 @@ namespace Map3d.Engine
                 _sr = sr;
             }
 
-            internal void ShowStretch(
+            /// <summary>
+            /// Flat on cloth XZ like stock UI line: pivot at emitter, length along +Y of sprite.
+            /// </summary>
+            internal void ShowFlatStretch(
                 Sprite sprite,
                 Color color,
                 Vector3 clothFrom,
                 Vector3 clothTo,
-                float widthMeters,
-                Camera? clothCam)
+                float widthMeters)
             {
-                Vector3 w0 = Go.transform.parent!.TransformPoint(clothFrom);
-                Vector3 w1 = Go.transform.parent!.TransformPoint(clothTo);
-                Vector3 delta = w1 - w0;
+                Vector3 delta = clothTo - clothFrom;
+                delta.y = 0f;
                 float len = delta.magnitude;
                 if (len < 0.05f)
                 {
@@ -232,25 +244,22 @@ namespace Map3d.Engine
                     Go.SetActive(true);
 
                 Transform t = Go.transform;
-                t.position = w0;
+                // Center-pivot SpriteRenderer: midpoint so ends land on emitter and own aircraft.
+                float y = Mathf.Max(clothFrom.y, clothTo.y) + Mathf.Max(8f, widthMeters * 0.15f);
+                t.localPosition = new Vector3(
+                    (clothFrom.x + clothTo.x) * 0.5f,
+                    y,
+                    (clothFrom.z + clothTo.z) * 0.5f);
 
-                if (clothCam != null)
-                {
-                    Vector3 view = -clothCam.transform.forward;
-                    Vector3 up = clothCam.transform.up;
-                    if (view.sqrMagnitude < 1e-6f)
-                        view = Vector3.forward;
-                    if (Mathf.Abs(Vector3.Dot(view.normalized, up.normalized)) > 0.98f)
-                        up = Vector3.up;
-                    t.rotation = Quaternion.LookRotation(view, up);
-                }
+                float ang = Mathf.Atan2(delta.x, delta.z) * Mathf.Rad2Deg;
+                t.localRotation = FlatOnCloth * Quaternion.Euler(0f, 0f, -ang);
 
-                Vector3 localDir = t.InverseTransformDirection(delta.normalized);
-                float zAng = Mathf.Atan2(localDir.x, localDir.y) * Mathf.Rad2Deg;
-                t.rotation *= Quaternion.Euler(0f, 0f, zAng);
+                float bw = Mathf.Max(sprite.bounds.size.x, 0.0001f);
+                float bh = Mathf.Max(sprite.bounds.size.y, 0.0001f);
+                float sx = widthMeters / bw;
+                float sy = len / bh;
+                t.localScale = new Vector3(sx, sy, sx);
 
-                float h = Mathf.Max(sprite.bounds.size.y, 0.0001f);
-                t.localScale = new Vector3(widthMeters, len / h, widthMeters);
                 _sr.sprite = sprite;
                 _sr.color = color;
                 _sr.sortingOrder = 25;
