@@ -7,6 +7,8 @@ namespace Map3d.Integration
     /// <summary>
     /// Replaces flat mapImage with engine RT; soft-hides stock iconLayer (keeps Update alive),
     /// hides viewIndicator and mapGrid_*. 3D grid drawn by StockClothGrid.
+    /// infoLayer stays active (TargetMarker visuals silenced per-frame by ClothTargetMarkerLayer;
+    /// JammedMarker still uses stock UI until cloth port).
     /// </summary>
     internal sealed class MinimapSlot : IDisposable
     {
@@ -132,7 +134,6 @@ namespace Map3d.Integration
             if (_iconLayer == null)
                 return;
 
-            // Keep GameObject active so UnitMapIcon/ObjectiveMarker Update paths stay alive.
             if (!_iconLayer.activeSelf)
                 _iconLayer.SetActive(true);
 
@@ -201,14 +202,13 @@ namespace Map3d.Integration
                 if (!c.gameObject.activeSelf)
                     c.gameObject.SetActive(true);
             }
-
             try
             {
                 map.gridLabels.UpdateGridColor();
             }
             catch
             {
-                // Theme may be unavailable during load.
+                // ignore
             }
         }
 
@@ -222,7 +222,6 @@ namespace Map3d.Integration
             }
             _mapImage = null;
             _iconLayer = null;
-            _iconGroup = null;
             _viewIndicator = null;
             _gridLabels = null;
             _map = null;

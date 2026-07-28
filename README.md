@@ -2,7 +2,7 @@
 
 [![Nuclear Option](https://img.shields.io/badge/Game-Nuclear%20Option-blue)](https://store.steampowered.com/app/2168680/Nuclear_Option/)
 [![BepInEx 5](https://img.shields.io/badge/Loader-BepInEx%205-orange)](https://docs.bepinex.dev/)
-[![Version](https://img.shields.io/badge/Version-0.3.5-green)](https://github.com/Mursisru/Map3d)
+[![Version](https://img.shields.io/badge/Version-0.3.6-green)](https://github.com/Mursisru/Map3d)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
 BepInEx 5 plugin for **Nuclear Option** that tilts the stock minimized `DynamicMap` into a 3D cloth view with terrain height relief. Unit icons and the view cone render on the same tilted layer as the map substrate.

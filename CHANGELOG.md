@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.6] — 2026-07-28
+
+### Added
+
+* `ClothExclusionLayer` — nuclear exclusion circles on the cloth grid layer from `HQ.GetExclusionZones()`.
+* `ClothNotchLayer` — ARH/SARH notch lines at the aircraft with stock bearing (`mapImage.z − yaw`) and seekerMode color; screen-plane 2D billboard.
+* `ClothTargetMarkerLayer` — selected-unit target brackets on cloth (3D position, 2D billboard) plus SPD/ALT/HDG/RNG TextMesh from stock `TargetMarker` texts.
+* `ClothSpriteUtil` — shared transparent sprite material (clone of Unity default SpriteRenderer mat + SrcAlpha) and builtin font setup for TextMesh.
+
+### Fixed
+
+* Building hangar/ammo icons readable size (stock min floor) and cam-facing rects.
+* Notch bearing stability vs nose jitter; true screen-plane 2D display (no cloth foreshortening).
+
 ## [0.3.5] — 2026-07-28
 
 ### Fixed

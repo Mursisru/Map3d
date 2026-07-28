@@ -33,6 +33,9 @@ namespace Map3d.Engine
         private ClothIconLayer? _icons;
         private ClothObjectiveLayer? _objectives;
         private ClothRadarLayer? _radar;
+        private ClothExclusionLayer? _exclusions;
+        private ClothNotchLayer? _notches;
+        private ClothTargetMarkerLayer? _targets;
         private StockClothGrid? _grid;
         private Vector3[] _verts = Array.Empty<Vector3>();
         private Vector2[] _uvs = Array.Empty<Vector2>();
@@ -80,6 +83,9 @@ namespace Map3d.Engine
             _objectives = new ClothObjectiveLayer(_tilt);
             _radar = new ClothRadarLayer(_tilt);
             _grid = new StockClothGrid(_canvas);
+            _exclusions = new ClothExclusionLayer(_canvas);
+            _notches = new ClothNotchLayer(_tilt);
+            _targets = new ClothTargetMarkerLayer(_tilt);
 
             var camGo = Child(_root.transform, "Cam").gameObject;
             _cam = camGo.AddComponent<Camera>();
@@ -250,6 +256,42 @@ namespace Map3d.Engine
                 _clothHalfW,
                 _mapSize,
                 showGrid);
+
+            _exclusions?.Sync(
+                map,
+                aircraft,
+                forward,
+                right,
+                _clothNear,
+                _clothFar,
+                _clothHalfW,
+                _lookAhead);
+
+            _notches?.Sync(
+                map,
+                ownAircraft,
+                aircraft,
+                forward,
+                right,
+                _radius,
+                cache,
+                _heightScaleMeters,
+                iconLift,
+                _cam);
+
+            _targets?.Sync(
+                map,
+                ownAircraft,
+                aircraft,
+                forward,
+                _radius,
+                clothZNear,
+                clothZFar,
+                _clothHalfW,
+                _cam,
+                cache,
+                _heightScaleMeters,
+                iconLift);
 
             _cam.enabled = true;
             return true;
@@ -684,6 +726,12 @@ namespace Map3d.Engine
             _objectives = null;
             _radar?.Dispose();
             _radar = null;
+            _exclusions?.Dispose();
+            _exclusions = null;
+            _notches?.Dispose();
+            _notches = null;
+            _targets?.Dispose();
+            _targets = null;
             _grid?.Dispose();
             _grid = null;
             _extentsInit = false;

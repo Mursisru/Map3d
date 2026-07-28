@@ -62,15 +62,7 @@ namespace Map3d.Engine
             _mesh.triangles = _tris;
             _filter.sharedMesh = _mesh;
 
-            Shader? sh = Shader.Find("Sprites/Default") ?? Shader.Find("UI/Default");
-            _material = new Material(sh!)
-            {
-                name = "Map3d.StockClothGridMat",
-                hideFlags = HideFlags.HideAndDontSave,
-                renderQueue = 3001
-            };
-            _material.SetInt("_ZWrite", 0);
-            _material.SetInt("_ZTest", (int)CompareFunction.Always);
+            _material = ClothSpriteUtil.CreateTransparentSpriteMaterial("Map3d.StockClothGridMat", 3001);
             _renderer.sharedMaterial = _material;
             go.SetActive(false);
         }

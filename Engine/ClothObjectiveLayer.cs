@@ -26,15 +26,7 @@ namespace Map3d.Engine
         internal ClothObjectiveLayer(Transform clothPivot)
         {
             _root = clothPivot;
-            Shader? sh = Shader.Find("Sprites/Default") ?? Shader.Find("UI/Default");
-            _mat = new Material(sh!)
-            {
-                name = "Map3d.ClothObjectiveMat",
-                hideFlags = HideFlags.HideAndDontSave,
-                renderQueue = 3000
-            };
-            _mat.SetInt("_ZTest", (int)CompareFunction.Always);
-            _mat.SetInt("_ZWrite", 0);
+            _mat = ClothSpriteUtil.CreateTransparentSpriteMaterial("Map3d.ClothObjectiveMat", 3000);
         }
 
         internal void Sync(
@@ -149,8 +141,7 @@ namespace Map3d.Engine
                 go.layer = MapTiltEngine.Layer;
                 go.transform.SetParent(_root, false);
                 var sr = go.AddComponent<SpriteRenderer>();
-                sr.sharedMaterial = _mat;
-                sr.shadowCastingMode = ShadowCastingMode.Off;
+                ClothSpriteUtil.ConfigureSpriteRenderer(sr, _mat);
 
                 var labelGo = new GameObject("Label");
                 labelGo.layer = MapTiltEngine.Layer;
@@ -163,6 +154,7 @@ namespace Map3d.Engine
                 tm.fontSize = 32;
                 tm.color = Color.green;
                 tm.text = string.Empty;
+                ClothSpriteUtil.SetupTextMesh(tm);
                 labelGo.SetActive(false);
 
                 _pool.Add(new Slot(go, sr, tm));

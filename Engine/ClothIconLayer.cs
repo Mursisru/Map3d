@@ -41,7 +41,7 @@ namespace Map3d.Engine
         internal ClothIconLayer(Transform clothPivot)
         {
             _root = clothPivot;
-            _iconMat = CreateAlwaysOnTopSpriteMat();
+            _iconMat = ClothSpriteUtil.CreateTransparentSpriteMaterial("Map3d.ClothIconMat", 3500);
             EnsureFallbackSprite();
 
             var coneGo = new GameObject("ViewCone");
@@ -49,7 +49,7 @@ namespace Map3d.Engine
             coneGo.transform.SetParent(_root, false);
             _cone = coneGo.transform;
             _coneSr = coneGo.AddComponent<SpriteRenderer>();
-            _coneSr.sharedMaterial = _iconMat;
+            ClothSpriteUtil.ConfigureSpriteRenderer(_coneSr, _iconMat);
             _coneSr.sortingOrder = 5;
             _coneSr.shadowCastingMode = ShadowCastingMode.Off;
             _coneSr.color = new Color(1f, 1f, 1f, 0.35f);
@@ -402,14 +402,7 @@ namespace Map3d.Engine
 
         private static Material CreateAlwaysOnTopSpriteMat()
         {
-            Shader? sh = Shader.Find("Sprites/Default") ?? Shader.Find("UI/Default");
-            var mat = new Material(sh!)
-            {
-                name = "Map3d.ClothIconMat",
-                hideFlags = HideFlags.HideAndDontSave,
-                renderQueue = 3500
-            };
-            return mat;
+            return ClothSpriteUtil.CreateTransparentSpriteMaterial("Map3d.ClothIconMat", 3500);
         }
 
         private void EnsureFallbackSprite()
@@ -460,8 +453,7 @@ namespace Map3d.Engine
                 go.layer = MapTiltEngine.Layer;
                 go.transform.SetParent(_root, false);
                 var sr = go.AddComponent<SpriteRenderer>();
-                sr.sharedMaterial = _iconMat;
-                sr.shadowCastingMode = ShadowCastingMode.Off;
+                ClothSpriteUtil.ConfigureSpriteRenderer(sr, _iconMat);
                 _pool.Add(new Slot(go, sr));
             }
             return _pool[index];

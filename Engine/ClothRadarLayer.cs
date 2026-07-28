@@ -26,15 +26,7 @@ namespace Map3d.Engine
         internal ClothRadarLayer(Transform clothPivot)
         {
             _root = clothPivot;
-            Shader? sh = Shader.Find("Sprites/Default") ?? Shader.Find("UI/Default");
-            _mat = new Material(sh!)
-            {
-                name = "Map3d.ClothRadarMat",
-                hideFlags = HideFlags.HideAndDontSave,
-                renderQueue = 3000
-            };
-            _mat.SetInt("_ZTest", (int)CompareFunction.Always);
-            _mat.SetInt("_ZWrite", 0);
+            _mat = ClothSpriteUtil.CreateTransparentSpriteMaterial("Map3d.ClothRadarMat", 3000);
         }
 
         internal void Sync(
@@ -185,8 +177,7 @@ namespace Map3d.Engine
                 go.layer = MapTiltEngine.Layer;
                 go.transform.SetParent(_root, false);
                 var sr = go.AddComponent<SpriteRenderer>();
-                sr.sharedMaterial = _mat;
-                sr.shadowCastingMode = ShadowCastingMode.Off;
+                ClothSpriteUtil.ConfigureSpriteRenderer(sr, _mat);
                 _pool.Add(new Slot(go, sr));
             }
             return _pool[index];
