@@ -14,10 +14,10 @@ namespace Map3d.Engine
     {
         internal const int Layer = 31;
         private const float IconLiftMeters = 4f;
+        private const float DiagonalBorderFactor = 1.41421356f;
         private const float ExtentCommitMeters = 400f;
         private const float ExtentCommitRel = 0.04f;
         private const float ClothResRefSpanMeters = 20000f;
-        private const float SideExtentMultiplier = 4f;
 
         private GameObject? _root;
         private Transform? _yaw;
@@ -248,9 +248,9 @@ namespace Map3d.Engine
             CardinalReach(aircraftPos, out float reachX, out float reachZ);
             float borderCardinal = Mathf.Max(50f, reachX, reachZ);
             float horizonFar = r * farScale - _lookAhead;
-            float borderForward = Mathf.Max(50f, borderCardinal - _lookAhead);
+            float borderForward = Mathf.Max(50f, borderCardinal * DiagonalBorderFactor - _lookAhead);
             float targetFar = Mathf.Max(horizonFar, borderForward);
-            float targetHalfW = Mathf.Max(r * sideScale, borderCardinal) * SideExtentMultiplier;
+            float targetHalfW = Mathf.Max(r * sideScale, borderCardinal);
             float targetNear = -r * nearScale;
 
             // Near always tracks radius (yaw-stable); far/halfW freeze until flight moves enough.

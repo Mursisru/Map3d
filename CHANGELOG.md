@@ -2,13 +2,6 @@
 
 All notable changes to this project are documented in this file.
 
-## [0.3.4] — 2026-07-28
-
-### Changed
-
-* Cloth forward extent reaches the map border from the look-ahead pivot (`borderReach − lookAhead`).
-* Cloth side half-width multiplied by **4×** over border reach (wider lateral coverage).
-
 ## [0.3.3] — 2026-07-28
 
 ### Added
