@@ -230,7 +230,7 @@ namespace Map3d.Engine
             if (img == null || img.sprite == null)
                 return;
 
-            _sprite = img.sprite;
+            _sprite = ClothSpriteUtil.GetBlackKeyedSprite(img.sprite);
             if (img.color.a > 0.01f)
                 _prefabAlpha = img.color.a;
         }

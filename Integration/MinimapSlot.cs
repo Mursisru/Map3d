@@ -7,8 +7,7 @@ namespace Map3d.Integration
     /// <summary>
     /// Replaces flat mapImage with engine RT; soft-hides stock iconLayer (keeps Update alive),
     /// hides viewIndicator and mapGrid_*. 3D grid drawn by StockClothGrid.
-    /// infoLayer stays active (TargetMarker visuals silenced per-frame by ClothTargetMarkerLayer;
-    /// JammedMarker still uses stock UI until cloth port).
+    /// infoLayer stays active (TargetMarker / JammedMarker visuals silenced per-frame by cloth layers).
     /// </summary>
     internal sealed class MinimapSlot : IDisposable
     {

@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.7] — 2026-07-29
+
+### Added
+
+* `ClothJammedMarkerLayer` — stock jammed marker on cloth (3D unit slot, 2D billboard, `JAMMED` label, flat yellow line to jammer icon).
+
+### Fixed
+
+* Radar ping lines anchor to own aircraft cloth origin `(0,y,0)` instead of tracking-lagged icon position.
+* Own aircraft icon pinned to `aircraftPos` on cloth (matches view cone / radar endpoint).
+* Flat cloth line placement honors sprite pivot; bottom-pivot stock radar textures fall back to center-pivot line sprite.
+* `ClothSpriteUtil.GetBlackKeyedSprite` limited to notch dash gaps only (no longer breaks icons/cone/markers).
+
 ## [0.3.6] — 2026-07-28
 
 ### Added

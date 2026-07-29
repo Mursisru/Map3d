@@ -37,6 +37,24 @@ namespace Map3d.Engine
         private float _nextDiagTime;
         private Sprite? _fallbackSprite;
         private Texture2D? _fallbackTex;
+        private Vector3 _ownPulledLocal;
+        private bool _hasOwnPulled;
+        private Vector3 _ownClothLocal;
+        private bool _hasOwnCloth;
+
+        /// <summary>Own aircraft icon local after billboard+cam-pull.</summary>
+        internal bool TryGetOwnPulledLocal(out Vector3 local)
+        {
+            local = _ownPulledLocal;
+            return _hasOwnPulled;
+        }
+
+        /// <summary>Own aircraft cloth XZ before cam-pull (flat map-line anchor).</summary>
+        internal bool TryGetOwnClothLocal(out Vector3 local)
+        {
+            local = _ownClothLocal;
+            return _hasOwnCloth;
+        }
 
         internal ClothIconLayer(Transform clothPivot)
         {
@@ -91,6 +109,8 @@ namespace Map3d.Engine
             float refCamDist = StockMapMetrics.ResolveRefCameraDistance(clothCam, _root);
             float buildingMinMeters = StockMapMetrics.ResolveIconMeters(radius, 1f, optionScale) * BuildingMinVsVehicle;
 
+            _hasOwnPulled = false;
+            _hasOwnCloth = false;
             SyncViewCone(map, aircraftPos, right, forward, radius, heights, heightScaleMeters, lift);
 
             int used = 0;
@@ -111,7 +131,8 @@ namespace Map3d.Engine
                     && !SceneSingleton<MapOptions>.i.showPilotIcons)
                     continue;
 
-                Vector3 world = ResolveWorld(ui, map, unit);
+                bool isOwn = unit == own;
+                Vector3 world = isOwn ? aircraftPos : ResolveWorld(ui, map, unit);
                 Vector3 delta = world - aircraftPos;
                 float x = Vector3.Dot(delta, right);
                 float z = Vector3.Dot(delta, forward);
@@ -123,7 +144,6 @@ namespace Map3d.Engine
                     continue;
                 }
 
-                bool isOwn = unit == own;
                 Sprite? sprite = null;
                 Color color = Color.white;
                 if (ui.iconImage != null)
@@ -131,13 +151,13 @@ namespace Map3d.Engine
                     sprite = ui.iconImage.sprite;
                     color = ui.iconImage.color;
                 }
-                if (sprite == null && unit.definition != null)
-                    sprite = unit.definition.mapIcon;
-                if (sprite == null)
-                {
-                    nullSprite++;
-                    sprite = _fallbackSprite;
-                }
+                    if (sprite == null && unit.definition != null)
+                        sprite = unit.definition.mapIcon;
+                    if (sprite == null)
+                    {
+                        nullSprite++;
+                        sprite = _fallbackSprite;
+                    }
                 if (ui.iconImage == null)
                     color = isOwn ? Color.white : StockColor(unit, map.selectedIcons != null && map.selectedIcons.Contains(ui));
                 color.a = 1f;
@@ -197,7 +217,17 @@ namespace Map3d.Engine
                     }
 
                     scale = StockMapMetrics.CompensatePerspectiveIconSize(_root, clothCam, localPos, scale, refCamDist);
+                    if (isOwn)
+                    {
+                        _ownClothLocal = localPos;
+                        _hasOwnCloth = true;
+                    }
                     slot.ShowBillboard(sprite, color, localPos, scale, headingUp, isOwn, clothCam);
+                    if (isOwn)
+                    {
+                        _ownPulledLocal = _root.InverseTransformPoint(slot.Go.transform.position);
+                        _hasOwnPulled = true;
+                    }
                 }
 
                 used++;

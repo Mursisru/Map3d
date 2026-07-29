@@ -23,6 +23,7 @@ namespace Map3d.Engine
         private readonly List<Slot> _pool = new List<Slot>(8);
         private readonly Material _mat;
         private Sprite? _sprite;
+        private Sprite? _stockSprite;
         private Color _color = StockTint;
 
         internal ClothExclusionLayer(Transform clothCanvas)
@@ -138,7 +139,8 @@ namespace Map3d.Engine
             if (img == null || img.sprite == null)
                 return;
 
-            _sprite = img.sprite;
+            _stockSprite = img.sprite;
+            _sprite = _stockSprite;
             if (img.color.a > 0.01f)
                 _color = img.color;
         }
@@ -146,7 +148,7 @@ namespace Map3d.Engine
         /// <summary>Stock UI circles sit on soft-hidden iconLayer; disable Image to skip extra work.</summary>
         private void SilenceStockDisplays(DynamicMap map)
         {
-            if (map.iconLayer == null || _sprite == null)
+            if (map.iconLayer == null || _stockSprite == null)
                 return;
 
             Transform root = map.iconLayer.transform;
@@ -156,7 +158,7 @@ namespace Map3d.Engine
                 if (c == null)
                     continue;
                 Image? img = c.GetComponent<Image>();
-                if (img == null || img.sprite != _sprite)
+                if (img == null || img.sprite != _stockSprite)
                     continue;
                 if (img.enabled)
                     img.enabled = false;
@@ -195,6 +197,7 @@ namespace Map3d.Engine
             _pool.Clear();
             UnityEngine.Object.Destroy(_mat);
             _sprite = null;
+            _stockSprite = null;
         }
 
         private sealed class Slot

@@ -90,6 +90,127 @@ namespace Map3d.Engine
         }
 
         /// <summary>
+        /// Flat map-plane line between cloth locals. Honors sprite pivot (stock UI lines often bottom-pivot).
+        /// </summary>
+        internal static void PlaceFlatClothLine(
+            Transform lineTx,
+            SpriteRenderer sr,
+            Sprite sprite,
+            Color color,
+            Vector3 localFrom,
+            Vector3 localTo,
+            float widthMeters,
+            int sortingOrder)
+        {
+            if (lineTx == null || sr == null || sprite == null)
+                return;
+
+            Vector3 delta = localTo - localFrom;
+            delta.y = 0f;
+            float len = delta.magnitude;
+            if (len < 0.05f)
+            {
+                if (lineTx.gameObject.activeSelf)
+                    lineTx.gameObject.SetActive(false);
+                return;
+            }
+
+            if (!lineTx.gameObject.activeSelf)
+                lineTx.gameObject.SetActive(true);
+
+            Vector3 dir = delta / len;
+            float y = Mathf.Max(localFrom.y, localTo.y) + Mathf.Max(4f, widthMeters * 0.1f);
+
+            // SpriteRenderer pivot = sprite.pivot; stock radar Image often bottom-centered.
+            float pivotNormY = sprite.rect.height > 0.01f
+                ? Mathf.Clamp01(sprite.pivot.y / sprite.rect.height)
+                : 0.5f;
+
+            lineTx.localPosition = new Vector3(
+                localFrom.x + dir.x * (pivotNormY * len),
+                y,
+                localFrom.z + dir.z * (pivotNormY * len));
+
+            float ang = Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg;
+            lineTx.localRotation = Quaternion.Euler(90f, 0f, 0f) * Quaternion.Euler(0f, 0f, -ang);
+
+            float bw = Mathf.Max(sprite.bounds.size.x, 0.0001f);
+            float bh = Mathf.Max(sprite.bounds.size.y, 0.0001f);
+            lineTx.localScale = new Vector3(widthMeters / bw, len / bh, widthMeters / bw);
+
+            sr.sprite = sprite;
+            sr.color = color;
+            sr.sortingOrder = sortingOrder;
+        }
+
+        /// <summary>
+        /// Same cam-forward pull as cloth unit billboards (full 3D local).
+        /// </summary>
+        internal static Vector3 BillboardPullLocal(
+            Transform clothPivot,
+            Camera clothCam,
+            Vector3 localPos,
+            float scaleMeters)
+        {
+            if (clothPivot == null || clothCam == null)
+                return localPos;
+
+            Vector3 world = clothPivot.TransformPoint(localPos);
+            world -= clothCam.transform.forward * Mathf.Max(15f, scaleMeters * 0.08f);
+            return clothPivot.InverseTransformPoint(world);
+        }
+
+        /// <summary>
+        /// Camera-facing line quad between two cloth-locals (matches billboard icons on tilt).
+        /// </summary>
+        internal static void PlaceCamFacingLine(
+            Transform lineTx,
+            SpriteRenderer sr,
+            Sprite sprite,
+            Color color,
+            Vector3 localFrom,
+            Vector3 localTo,
+            float widthMeters,
+            Camera clothCam,
+            int sortingOrder)
+        {
+            if (lineTx == null || sr == null || sprite == null || clothCam == null)
+                return;
+
+            Vector3 delta = localTo - localFrom;
+            float len = delta.magnitude;
+            if (len < 0.05f)
+            {
+                if (lineTx.gameObject.activeSelf)
+                    lineTx.gameObject.SetActive(false);
+                return;
+            }
+
+            if (!lineTx.gameObject.activeSelf)
+                lineTx.gameObject.SetActive(true);
+
+            Vector3 mid = (localFrom + localTo) * 0.5f;
+            lineTx.localPosition = mid;
+
+            Vector3 worldDelta = lineTx.parent != null
+                ? lineTx.parent.TransformDirection(delta.normalized)
+                : delta.normalized;
+            Vector3 view = -clothCam.transform.forward;
+            Vector3 up = worldDelta;
+            if (Mathf.Abs(Vector3.Dot(view, up)) > 0.98f)
+                up = clothCam.transform.up;
+            lineTx.rotation = Quaternion.LookRotation(view, up);
+
+            float bw = Mathf.Max(sprite.bounds.size.x, 0.0001f);
+            float bh = Mathf.Max(sprite.bounds.size.y, 0.0001f);
+            lineTx.localScale = new Vector3(widthMeters / bw, len / bh, 1f);
+
+            sr.sprite = sprite;
+            sr.color = color;
+            sr.sortingOrder = sortingOrder;
+        }
+
+        /// <summary>
         /// Perspective cloth cam shrinks distant geometry; scale billboards by distance/ref
         /// so apparent screen size stays near stock flat minimap.
         /// </summary>

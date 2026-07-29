@@ -36,6 +36,7 @@ namespace Map3d.Engine
         private ClothExclusionLayer? _exclusions;
         private ClothNotchLayer? _notches;
         private ClothTargetMarkerLayer? _targets;
+        private ClothJammedMarkerLayer? _jammed;
         private StockClothGrid? _grid;
         private Vector3[] _verts = Array.Empty<Vector3>();
         private Vector2[] _uvs = Array.Empty<Vector2>();
@@ -86,6 +87,7 @@ namespace Map3d.Engine
             _exclusions = new ClothExclusionLayer(_canvas);
             _notches = new ClothNotchLayer(_tilt);
             _targets = new ClothTargetMarkerLayer(_tilt);
+            _jammed = new ClothJammedMarkerLayer(_tilt);
 
             var camGo = Child(_root.transform, "Cam").gameObject;
             _cam = camGo.AddComponent<Camera>();
@@ -243,7 +245,10 @@ namespace Map3d.Engine
                 _cam,
                 cache,
                 _heightScaleMeters,
-                iconLift);
+                iconLift,
+                _icons != null && _icons.TryGetOwnClothLocal(out Vector3 ownCloth)
+                    ? ownCloth
+                    : (Vector3?)null);
 
             bool showGrid = SceneSingleton<MapOptions>.i == null || SceneSingleton<MapOptions>.i.showGridLabels;
             _grid?.Sync(
@@ -292,6 +297,23 @@ namespace Map3d.Engine
                 cache,
                 _heightScaleMeters,
                 iconLift);
+
+            _jammed?.Sync(
+                map,
+                ownAircraft,
+                aircraft,
+                forward,
+                _radius,
+                clothZNear,
+                clothZFar,
+                _clothHalfW,
+                _cam,
+                cache,
+                _heightScaleMeters,
+                iconLift,
+                _icons != null && _icons.TryGetOwnClothLocal(out Vector3 ownJamCloth)
+                    ? ownJamCloth
+                    : (Vector3?)null);
 
             _cam.enabled = true;
             return true;
@@ -732,8 +754,11 @@ namespace Map3d.Engine
             _notches = null;
             _targets?.Dispose();
             _targets = null;
+            _jammed?.Dispose();
+            _jammed = null;
             _grid?.Dispose();
             _grid = null;
+            ClothSpriteUtil.DisposeOwned();
             _extentsInit = false;
             if (_cam != null)
             {
